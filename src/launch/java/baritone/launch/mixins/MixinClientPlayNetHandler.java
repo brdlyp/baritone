@@ -23,6 +23,7 @@ import baritone.api.IBaritone;
 import baritone.api.event.events.BlockChangeEvent;
 import baritone.api.event.events.ChatEvent;
 import baritone.api.event.events.ChunkEvent;
+import baritone.api.event.events.MerchantOffersEvent;
 import baritone.api.event.events.type.EventState;
 import baritone.api.utils.Pair;
 import baritone.cache.CachedChunk;
@@ -207,6 +208,28 @@ public abstract class MixinClientPlayNetHandler extends ClientCommonPacketListen
             LocalPlayer player = ibaritone.getPlayerContext().player();
             if (player != null && player.connection == (ClientPacketListener) (Object) this) {
                 ibaritone.getGameEventHandler().onPlayerDeath();
+            }
+        }
+    }
+
+    @Inject(
+            method = "handleMerchantOffers",
+            at = @At("RETURN")
+    )
+    private void onMerchantOffersReceived(ClientboundMerchantOffersPacket packetIn, CallbackInfo ci) {
+        for (IBaritone ibaritone : BaritoneAPI.getProvider().getAllBaritones()) {
+            LocalPlayer player = ibaritone.getPlayerContext().player();
+            if (player != null && player.connection == (ClientPacketListener) (Object) this) {
+                ibaritone.getGameEventHandler().onMerchantOffersReceived(
+                        new MerchantOffersEvent(
+                                packetIn.getContainerId(),
+                                packetIn.getOffers(),
+                                packetIn.getVillagerLevel(),
+                                packetIn.getVillagerXp(),
+                                packetIn.showProgress(),
+                                packetIn.canRestock()
+                        )
+                );
             }
         }
     }

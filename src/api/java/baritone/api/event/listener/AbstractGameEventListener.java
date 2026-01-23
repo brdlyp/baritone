@@ -77,4 +77,7 @@ public interface AbstractGameEventListener extends IGameEventListener {
 
     @Override
     default void onPathEvent(PathEvent event) {}
+
+    @Override
+    default void onMerchantOffersReceived(MerchantOffersEvent event) {}
 }

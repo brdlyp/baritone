@@ -95,6 +95,12 @@ public interface IBaritone {
     IElytraProcess getElytraProcess();
 
     /**
+     * @return The {@link IVillagerTradeProcess} instance
+     * @see IVillagerTradeProcess
+     */
+    IVillagerTradeProcess getVillagerTradeProcess();
+
+    /**
      * @return The {@link IWorldProvider} instance
      * @see IWorldProvider
      */

@@ -1548,6 +1548,50 @@ public final class Settings {
      */
     public final Setting<Boolean> allowWalkOnMagmaBlocks = new Setting<>(false);
 
+    // ==================== Villager Trade Cycling Settings ====================
+
+    /**
+     * Ticks to wait after placing workstation for villager to claim it.
+     * Villager needs time to pathfind and claim the job.
+     */
+    public final Setting<Integer> villagerWorkstationClaimTicks = new Setting<>(40);
+
+    /**
+     * Ticks to wait after villager gets profession before interacting.
+     */
+    public final Setting<Integer> villagerProfessionWaitTicks = new Setting<>(5);
+
+    /**
+     * Ticks to wait after opening trade GUI before reading trades.
+     */
+    public final Setting<Integer> villagerTradeReadDelayTicks = new Setting<>(5);
+
+    /**
+     * Ticks to wait after closing trade GUI.
+     */
+    public final Setting<Integer> villagerTradeCloseDelayTicks = new Setting<>(3);
+
+    /**
+     * Ticks to wait after breaking workstation before placing again.
+     */
+    public final Setting<Integer> villagerWorkstationBreakDelayTicks = new Setting<>(10);
+
+    /**
+     * Maximum ticks to wait for villager to claim workstation before retrying.
+     * If exceeded, will break and re-place workstation.
+     */
+    public final Setting<Integer> villagerClaimTimeoutTicks = new Setting<>(100);
+
+    /**
+     * Maximum cycles before giving up. -1 for unlimited.
+     */
+    public final Setting<Integer> villagerMaxCycles = new Setting<>(-1);
+
+    /**
+     * Play sound when desired trade is found.
+     */
+    public final Setting<Boolean> villagerTradeFoundSound = new Setting<>(true);
+
     /**
      * A map of lowercase setting field names to their respective setting
      */

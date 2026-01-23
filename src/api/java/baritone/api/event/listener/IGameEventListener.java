@@ -153,4 +153,12 @@ public interface IGameEventListener {
      * @param event The event
      */
     void onPathEvent(PathEvent event);
+
+    /**
+     * Called when merchant trade offers are received from the server.
+     * This occurs when a player opens a villager's trading GUI.
+     *
+     * @param event The event containing the trade offers
+     */
+    void onMerchantOffersReceived(MerchantOffersEvent event);
 }

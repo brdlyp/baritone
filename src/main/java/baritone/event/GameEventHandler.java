@@ -19,6 +19,7 @@ package baritone.event;
 
 import baritone.Baritone;
 import baritone.api.event.events.*;
+import baritone.api.event.events.MerchantOffersEvent;
 import baritone.api.event.events.type.EventState;
 import baritone.api.event.listener.IEventBus;
 import baritone.api.event.listener.IGameEventListener;
@@ -180,6 +181,11 @@ public final class GameEventHandler implements IEventBus, Helper {
     @Override
     public void onPathEvent(PathEvent event) {
         listeners.forEach(l -> l.onPathEvent(event));
+    }
+
+    @Override
+    public void onMerchantOffersReceived(MerchantOffersEvent event) {
+        listeners.forEach(l -> l.onMerchantOffersReceived(event));
     }
 
     @Override
