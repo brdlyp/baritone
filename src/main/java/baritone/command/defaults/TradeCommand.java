@@ -177,7 +177,49 @@ public class TradeCommand extends Command {
 
         switch (action) {
             case "setup" -> {
-                proc.beginSetup();
+                // Show setup instructions
+                logDirect("Trade Setup Instructions:");
+                logDirect("  1. Look at a villager and run: #trade setvil");
+                logDirect("  2. Look at where to place workstation and run: #trade setpos");
+                logDirect("  3. Hold a lectern in your hand");
+                logDirect("  4. Run: #trade cycle <enchantment>");
+                
+                // Show current setup status
+                SetupStatus setup = proc.getSetupStatus();
+                logDirect("");
+                logDirect("Current setup:");
+                logDirect("  Villager: " + (setup.hasVillager() ? "Selected at " + setup.villager().blockPosition() : "Not set"));
+                logDirect("  Position: " + (setup.hasWorkstationPos() ? setup.workstationPos().toShortString() : "Not set"));
+            }
+
+            case "setvil", "setvillager" -> {
+                // Select the villager the player is looking at
+                if (proc.selectLookedAtVillager()) {
+                    SetupStatus setup = proc.getSetupStatus();
+                    logDirect("Villager selected at " + setup.villager().blockPosition());
+                    if (!setup.hasWorkstationPos()) {
+                        logDirect("Now look at where to place the workstation and run: #trade setpos");
+                    } else {
+                        logDirect("Setup complete! Hold a lectern and run: #trade cycle <enchantment>");
+                    }
+                } else {
+                    logDirect("Error: Look at a villager first!");
+                }
+            }
+
+            case "setpos", "setposition" -> {
+                // Select the position the player is looking at
+                if (proc.selectLookedAtPosition()) {
+                    SetupStatus setup = proc.getSetupStatus();
+                    logDirect("Workstation position set to " + setup.workstationPos().toShortString());
+                    if (!setup.hasVillager()) {
+                        logDirect("Now look at a villager and run: #trade setvil");
+                    } else {
+                        logDirect("Setup complete! Hold a lectern and run: #trade cycle <enchantment>");
+                    }
+                } else {
+                    logDirect("Error: Look at a block first!");
+                }
             }
 
             case "cycle" -> {
@@ -376,7 +418,7 @@ public class TradeCommand extends Command {
     public Stream<String> tabComplete(String label, IArgConsumer args) throws CommandException {
         if (args.hasExactlyOne()) {
             String prefix = args.peekString().toLowerCase();
-            return Stream.of("setup", "cycle", "stop", "status", "scan", "presets")
+            return Stream.of("setup", "setvil", "setpos", "cycle", "stop", "status", "scan", "presets")
                     .filter(s -> s.startsWith(prefix));
         }
 
@@ -410,9 +452,9 @@ public class TradeCommand extends Command {
                 "The trade command automates villager trade cycling to find specific enchanted books.",
                 "",
                 "Setup:",
-                "  #trade setup - Enter setup mode",
-                "    1. Right-click a villager to select it",
-                "    2. Right-click where to place the workstation",
+                "  #trade setup - Show setup instructions and current status",
+                "  #trade setvil - Select the villager you're looking at",
+                "  #trade setpos - Select the block position you're looking at",
                 "",
                 "Usage:",
                 "  #trade cycle mending - Cycle until Mending book found",
@@ -427,7 +469,8 @@ public class TradeCommand extends Command {
                 "  #trade presets - List available presets",
                 "",
                 "Requirements:",
-                "  - Complete #trade setup first",
+                "  - Run #trade setvil while looking at a villager",
+                "  - Run #trade setpos while looking at workstation placement spot",
                 "  - Hold workstation block (lectern) in main hand"
         );
     }

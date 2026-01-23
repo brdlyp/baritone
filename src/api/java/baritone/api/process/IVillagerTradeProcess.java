@@ -41,22 +41,16 @@ public interface IVillagerTradeProcess extends IBaritoneProcess {
     // ==================== SETUP ====================
 
     /**
-     * Enter setup mode - next entity click sets target villager,
-     * next block click sets workstation position.
+     * Select the villager the player is currently looking at.
+     * @return true if a villager was found and selected
      */
-    void beginSetup();
+    boolean selectLookedAtVillager();
 
     /**
-     * Exit setup mode without completing it.
+     * Select the block position the player is currently looking at as the workstation position.
+     * @return true if a valid position was found and selected
      */
-    void cancelSetup();
-
-    /**
-     * Check if currently in setup mode.
-     *
-     * @return true if in setup mode
-     */
-    boolean isInSetupMode();
+    boolean selectLookedAtPosition();
 
     /**
      * Set the target villager to cycle.
@@ -203,8 +197,8 @@ public interface IVillagerTradeProcess extends IBaritoneProcess {
     enum CycleState {
         /** Idle, not cycling */
         IDLE,
-        /** Waiting for user to complete setup (click villager/position) */
-        SETUP_PENDING,
+        /** Waiting for daytime when villagers can work */
+        WAITING_FOR_DAYTIME,
         /** Placing the workstation block */
         PLACING_WORKSTATION,
         /** Waiting for villager to claim the workstation and get a profession */

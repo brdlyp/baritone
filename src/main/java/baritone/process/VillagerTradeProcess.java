@@ -63,8 +63,8 @@ import java.util.function.Predicate;
 public final class VillagerTradeProcess extends BaritoneProcessHelper implements IVillagerTradeProcess {
 
     // Setup state
-    private boolean inSetupMode = false;
     private Villager targetVillager = null;
+    private java.util.UUID targetVillagerUUID = null;  // Store UUID for reliable comparison
     private BlockPos workstationPos = null;
     private Block workstationBlock = null;
 
@@ -86,6 +86,7 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
     // Timing
     private int ticksWaited = 0;
     private int ticksInState = 0;
+    private CycleState previousState = CycleState.IDLE;
 
     // Workstation blocks that give professions
     private static final List<Block> WORKSTATION_BLOCKS = List.of(
@@ -110,15 +111,6 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         // Register as event listener to receive merchant offers
         baritone.getGameEventHandler().registerEventListener(new AbstractGameEventListener() {
             @Override
-            public void onTick(TickEvent event) {
-                if (event.getType() == TickEvent.Type.IN) {
-                    VillagerTradeProcess.this.onGameTick();
-                }
-            }
-        });
-
-        baritone.getGameEventHandler().registerEventListener(new AbstractGameEventListener() {
-            @Override
             public void onMerchantOffersReceived(MerchantOffersEvent event) {
                 VillagerTradeProcess.this.handleMerchantOffers(event);
             }
@@ -133,82 +125,50 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         }
     }
 
-    private void onGameTick() {
-        // Handle setup mode clicks
-        if (inSetupMode) {
-            handleSetupModeClicks();
-        }
-    }
-
-    private void handleSetupModeClicks() {
-        // Check if player clicked on a villager or block
-        var hitResult = ctx.objectMouseOver();
-        if (hitResult == null) return;
-
-        // Check for entity hit (villager)
-        if (hitResult.getType() == net.minecraft.world.phys.HitResult.Type.ENTITY) {
+    /**
+     * Select the villager the player is currently looking at.
+     * @return true if a villager was found and selected
+     */
+    public boolean selectLookedAtVillager() {
+        // Use Minecraft's hitResult which includes entity hits (not ctx.objectMouseOver() which only does block raytrace)
+        var hitResult = ctx.minecraft().hitResult;
+        if (hitResult != null && hitResult.getType() == net.minecraft.world.phys.HitResult.Type.ENTITY) {
             var entityHit = (net.minecraft.world.phys.EntityHitResult) hitResult;
             if (entityHit.getEntity() instanceof Villager villager) {
-                if (ctx.minecraft().options.keyUse.isDown()) {
-                    setTargetVillager(villager);
-                    logDirect("Villager selected at " + villager.blockPosition());
-                    if (workstationPos != null) {
-                        logDirect("Setup complete! Ready to cycle.");
-                        inSetupMode = false;
-                    } else {
-                        logDirect("Now right-click where to place the workstation.");
-                    }
-                }
+                setTargetVillager(villager);
+                return true;
             }
         }
-        // Check for block hit (workstation position)
-        else if (hitResult.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
+        return false;
+    }
+
+    /**
+     * Select the block position the player is currently looking at as the workstation position.
+     * @return true if a valid position was found and selected
+     */
+    public boolean selectLookedAtPosition() {
+        var hitResult = ctx.objectMouseOver();
+        if (hitResult != null && hitResult.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
             var blockHit = (net.minecraft.world.phys.BlockHitResult) hitResult;
-            if (ctx.minecraft().options.keyUse.isDown() && targetVillager != null) {
-                BlockPos clickedPos = blockHit.getBlockPos();
-                // Set workstation position to the block above if clicked on solid block
-                BlockState clickedState = ctx.world().getBlockState(clickedPos);
-                if (clickedState.isSolid()) {
-                    setWorkstationPosition(clickedPos.above());
-                } else {
-                    setWorkstationPosition(clickedPos);
-                }
-                logDirect("Workstation position set to " + workstationPos);
-                logDirect("Setup complete! Ready to cycle.");
-                inSetupMode = false;
+            BlockPos clickedPos = blockHit.getBlockPos();
+            // Set workstation position to the block above if clicked on solid block
+            BlockState clickedState = ctx.world().getBlockState(clickedPos);
+            if (clickedState.isSolid()) {
+                setWorkstationPosition(clickedPos.above());
+            } else {
+                setWorkstationPosition(clickedPos);
             }
+            return true;
         }
+        return false;
     }
 
     // ==================== IVillagerTradeProcess Implementation ====================
 
     @Override
-    public void beginSetup() {
-        inSetupMode = true;
-        targetVillager = null;
-        workstationPos = null;
-        workstationBlock = null;
-        state = CycleState.SETUP_PENDING;
-        logDirect("Setup mode enabled.");
-        logDirect("1. Right-click a villager to select it");
-        logDirect("2. Right-click where to place workstation");
-    }
-
-    @Override
-    public void cancelSetup() {
-        inSetupMode = false;
-        state = CycleState.IDLE;
-        logDirect("Setup cancelled.");
-    }
-
-    @Override
-    public boolean isInSetupMode() {
-        return inSetupMode;
-    }
-
-    @Override
     public void setTargetVillager(Villager villager) {
         this.targetVillager = villager;
+        this.targetVillagerUUID = villager != null ? villager.getUUID() : null;
     }
 
     @Override
@@ -218,7 +178,7 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
 
     @Override
     public SetupStatus getSetupStatus() {
-        boolean isReady = targetVillager != null && workstationPos != null && !inSetupMode;
+        boolean isReady = targetVillager != null && workstationPos != null;
         return new SetupStatus(targetVillager, workstationPos, workstationBlock, isReady);
     }
 
@@ -258,13 +218,31 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         this.ticksWaited = 0;
         this.ticksInState = 0;
 
-        // Start the cycle
-        state = CycleState.PLACING_WORKSTATION;
+        // Start the cycle - check daytime first
         logDirect("Starting trade cycling...");
         logDirect("Looking for matching trade. Will cycle until found.");
         if (autoLock) {
             logDirect("Auto-lock enabled: will trade once to lock profession when found.");
         }
+        
+        // Check if it's work time for villagers
+        if (isVillagerWorkTime()) {
+            state = CycleState.PLACING_WORKSTATION;
+        } else {
+            state = CycleState.WAITING_FOR_DAYTIME;
+            logDirect("It's nighttime - waiting for villagers to wake up...");
+        }
+    }
+
+    /**
+     * Check if it's daytime when villagers work (roughly 0-12000 ticks).
+     * Villagers sleep from about 12000 to 24000 (or 0) ticks.
+     */
+    private boolean isVillagerWorkTime() {
+        long dayTime = ctx.world().getDayTime() % 24000;
+        // Villagers work roughly from 0 (6 AM) to 12000 (6 PM)
+        // They sleep from about 12000 to 23999
+        return dayTime < 12000;
     }
 
     @Override
@@ -279,7 +257,7 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
 
     @Override
     public boolean isCycling() {
-        return state != CycleState.IDLE && state != CycleState.SETUP_PENDING && state != CycleState.FOUND && state != CycleState.FAILED;
+        return state != CycleState.IDLE && state != CycleState.FOUND && state != CycleState.FAILED;
     }
 
     @Override
@@ -313,12 +291,17 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
 
     @Override
     public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
+        // Clear inputs when transitioning to a new state
+        if (state != previousState) {
+            baritone.getInputOverrideHandler().clearAllKeys();
+            previousState = state;
+            ticksInState = 0;
+        }
         ticksInState++;
 
         switch (state) {
-            case SETUP_PENDING:
-                // Just wait for setup to complete
-                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            case WAITING_FOR_DAYTIME:
+                return handleWaitingForDaytime();
 
             case PLACING_WORKSTATION:
                 return handlePlacingWorkstation(isSafeToCancel);
@@ -359,6 +342,22 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         }
     }
 
+    private PathingCommand handleWaitingForDaytime() {
+        // Check every second (20 ticks)
+        if (ticksInState % 20 == 0) {
+            if (isVillagerWorkTime()) {
+                logDirect("Daytime! Resuming trade cycling...");
+                state = CycleState.PLACING_WORKSTATION;
+                ticksWaited = 0;
+            } else if (ticksInState % 200 == 0) {
+                // Log every 10 seconds
+                long dayTime = ctx.world().getDayTime() % 24000;
+                logDirect("Waiting for daytime... (current time: " + dayTime + "/24000)");
+            }
+        }
+        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+    }
+
     private PathingCommand handlePlacingWorkstation(boolean isSafeToCancel) {
         if (workstationPos == null || workstationBlock == null) {
             logDirect("Error: Workstation position or block not set");
@@ -391,9 +390,9 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
 
-        // Make sure we have the workstation in hand
+        // Make sure we have the workstation in hand (allow searching full inventory)
         if (!baritone.getInventoryBehavior().throwaway(true, stack ->
-                stack.getItem() instanceof BlockItem bi && bi.getBlock() == workstationBlock)) {
+                stack.getItem() instanceof BlockItem bi && bi.getBlock() == workstationBlock, true)) {
             logDirect("Error: No workstation block in inventory");
             state = CycleState.FAILED;
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -418,8 +417,8 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
     private PathingCommand handleWaitingForProfession() {
         ticksWaited++;
 
-        // Check if villager has gained profession
-        if (targetVillager != null && targetVillager.getVillagerData().profession() != VillagerProfession.NONE) {
+        // Check if villager has gained profession (use .is() for Holder comparison)
+        if (targetVillager != null && !targetVillager.getVillagerData().profession().is(VillagerProfession.NONE)) {
             // Villager has profession, wait a bit more for trades to initialize
             if (ticksWaited > Baritone.settings().villagerProfessionWaitTicks.value) {
                 state = CycleState.MOVING_TO_VILLAGER;
@@ -490,19 +489,33 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
 
-        // Look at villager and right-click
+        // Look at villager and interact
         Vec3 villagerEyes = targetVillager.getEyePosition();
         Rotation rot = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), villagerEyes, ctx.playerRotations());
 
         baritone.getLookBehavior().updateTarget(rot, true);
 
-        // Check if we're looking at the villager
-        var hitResult = ctx.objectMouseOver();
+        // Check if we're looking at the villager (use minecraft's hitResult which includes entities)
+        var hitResult = ctx.minecraft().hitResult;
         if (hitResult != null && hitResult.getType() == net.minecraft.world.phys.HitResult.Type.ENTITY) {
             var entityHit = (net.minecraft.world.phys.EntityHitResult) hitResult;
-            if (entityHit.getEntity() == targetVillager) {
-                baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, true);
+            // Use UUID comparison instead of reference equality (entity objects can be recreated)
+            if (entityHit.getEntity() instanceof Villager hitVillager && 
+                    hitVillager.getUUID().equals(targetVillagerUUID)) {
+                // Only interact once every few ticks to avoid spam
+                if (ticksWaited % 5 == 0) {
+                    // Use direct entity interaction instead of input override
+                    ctx.minecraft().gameMode.interact(ctx.player(), hitVillager, net.minecraft.world.InteractionHand.MAIN_HAND);
+                }
+            } else if (ticksWaited % 20 == 0) {
+                // Debug: log which entity we're looking at
+                logDirect("Looking at wrong entity: " + entityHit.getEntity().getClass().getSimpleName() + 
+                        " (UUID match: " + entityHit.getEntity().getUUID().equals(targetVillagerUUID) + ")");
             }
+        } else if (ticksWaited % 20 == 0) {
+            // Debug: not looking at entity
+            String hitType = hitResult != null ? hitResult.getType().toString() : "null";
+            logDirect("Not looking at entity, hitType=" + hitType);
         }
 
         return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -520,6 +533,9 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
             }
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
+
+        // Log what enchantment we saw (if any)
+        logTradeEnchantment(pendingOffers);
 
         // Check offers against predicate
         for (MerchantOffer offer : pendingOffers) {
@@ -553,6 +569,35 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
     }
 
+    /**
+     * Log what enchantment book trade was seen (if any)
+     */
+    private void logTradeEnchantment(MerchantOffers offers) {
+        for (MerchantOffer offer : offers) {
+            ItemStack result = offer.getResult();
+            if (result.is(net.minecraft.world.item.Items.ENCHANTED_BOOK)) {
+                // Found an enchanted book, log it
+                var storedEnchants = result.get(net.minecraft.core.component.DataComponents.STORED_ENCHANTMENTS);
+                if (storedEnchants != null && !storedEnchants.isEmpty()) {
+                    for (var enchant : storedEnchants.keySet()) {
+                        int level = storedEnchants.getLevel(enchant);
+                        String name = enchant.getRegisteredName();
+                        if (name != null) {
+                            name = name.replace("minecraft:", "");
+                        } else {
+                            name = enchant.value().description().getString();
+                        }
+                        int cost = offer.getCostA().getCount();
+                        logDirect("Cycle " + (cycleCount + 1) + ": " + name + " " + level + " (" + cost + " emeralds)");
+                        return;
+                    }
+                }
+            }
+        }
+        // No enchanted book found
+        logDirect("Cycle " + (cycleCount + 1) + ": No book trade");
+    }
+
     private PathingCommand handleClosingTradeGui() {
         ticksWaited++;
 
@@ -579,6 +624,7 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         // Check if block is already broken
         BlockState currentState = ctx.world().getBlockState(workstationPos);
         if (currentState.isAir() || currentState.getBlock() != workstationBlock) {
+            // Block is broken, move to next state
             state = CycleState.WAITING_FOR_RESET;
             ticksWaited = 0;
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -614,11 +660,23 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
     private PathingCommand handleWaitingForReset() {
         ticksWaited++;
 
-        // Wait for villager to lose profession
-        if (targetVillager != null && targetVillager.getVillagerData().profession() == VillagerProfession.NONE) {
+        // Debug logging every second (20 ticks)
+        if (ticksWaited % 20 == 0) {
+            String profession = targetVillager != null ? 
+                    targetVillager.getVillagerData().profession().toString() : "null villager";
+            logDirect("WAITING_FOR_RESET: ticks=" + ticksWaited + ", profession=" + profession);
+        }
+
+        // Wait for villager to lose profession (use .is() for Holder comparison)
+        if (targetVillager != null && targetVillager.getVillagerData().profession().is(VillagerProfession.NONE)) {
             if (ticksWaited > Baritone.settings().villagerWorkstationBreakDelayTicks.value) {
-                // Ready to start next cycle
-                state = CycleState.PLACING_WORKSTATION;
+                // Ready to start next cycle - but check if it's daytime first
+                if (isVillagerWorkTime()) {
+                    state = CycleState.PLACING_WORKSTATION;
+                } else {
+                    logDirect("Night time - waiting for villagers to wake up...");
+                    state = CycleState.WAITING_FOR_DAYTIME;
+                }
                 ticksWaited = 0;
                 ticksInState = 0;
             }
