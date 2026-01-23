@@ -223,7 +223,7 @@ public class TradeCommand extends Command {
             }
 
             case "cycle" -> {
-                // #trade cycle <enchantment> [autolock]
+                // #trade cycle <enchantment> [autolock] [-human]
                 args.requireMin(1);
 
                 // Validate setup is complete
@@ -238,13 +238,19 @@ public class TradeCommand extends Command {
                 // Parse enchantment argument
                 String enchantArg = args.getString();
                 boolean autolock = false;
+                boolean humanMode = false;
 
-                // Check for autolock flag at the end
-                if (args.hasAny()) {
-                    String next = args.peekString();
-                    if (next.equalsIgnoreCase("autolock")) {
+                // Check for optional flags at the end
+                while (args.hasAny()) {
+                    String next = args.peekString().toLowerCase();
+                    if (next.equals("autolock")) {
                         autolock = true;
                         args.getString(); // consume it
+                    } else if (next.equals("-human") || next.equals("human")) {
+                        humanMode = true;
+                        args.getString(); // consume it
+                    } else {
+                        break; // Unknown flag, stop parsing
                     }
                 }
 
@@ -254,11 +260,14 @@ public class TradeCommand extends Command {
                         criteria.stream().anyMatch(c -> c.matches(offer));
 
                 // Start cycling
-                proc.startCycling(predicate, autolock);
+                proc.startCycling(predicate, autolock, humanMode);
 
                 logDirect("Cycling for: " + formatCriteria(criteria));
                 if (autolock) {
                     logDirect("Will auto-lock when found (if you have emeralds + book)");
+                }
+                if (humanMode) {
+                    logDirect("Human mode enabled: randomized delays and movements");
                 }
             }
 
@@ -462,11 +471,16 @@ public class TradeCommand extends Command {
                 "  #trade cycle [mending, silk_touch] - Cycle for multiple enchants",
                 "  #trade cycle sword_best - Use a preset",
                 "  #trade cycle mending autolock - Auto-buy to lock profession",
+                "  #trade cycle mending -human - Enable human-like randomized behavior",
                 "",
                 "Control:",
                 "  #trade stop - Stop cycling",
                 "  #trade status - Show cycle count, time, last trades",
                 "  #trade presets - List available presets",
+                "",
+                "Flags:",
+                "  autolock - Auto-buy the book when found to lock the trade",
+                "  -human - Add randomized delays/movements to appear more human-like",
                 "",
                 "Requirements:",
                 "  - Run #trade setvil while looking at a villager",

@@ -80,8 +80,19 @@ public interface IVillagerTradeProcess extends IBaritoneProcess {
      *
      * @param desiredTrade Predicate that returns true for desired trades
      * @param autoLock     If true, make one trade to lock profession when found
+     * @param humanMode    If true, add randomized delays and movements to appear more human-like
      */
-    void startCycling(Predicate<MerchantOffer> desiredTrade, boolean autoLock);
+    void startCycling(Predicate<MerchantOffer> desiredTrade, boolean autoLock, boolean humanMode);
+
+    /**
+     * Start cycling trades until predicate matches.
+     *
+     * @param desiredTrade Predicate that returns true for desired trades
+     * @param autoLock     If true, make one trade to lock profession when found
+     */
+    default void startCycling(Predicate<MerchantOffer> desiredTrade, boolean autoLock) {
+        startCycling(desiredTrade, autoLock, false);
+    }
 
     /**
      * Start cycling trades until predicate matches, without auto-locking.
@@ -89,7 +100,7 @@ public interface IVillagerTradeProcess extends IBaritoneProcess {
      * @param desiredTrade Predicate that returns true for desired trades
      */
     default void startCycling(Predicate<MerchantOffer> desiredTrade) {
-        startCycling(desiredTrade, false);
+        startCycling(desiredTrade, false, false);
     }
 
     /**

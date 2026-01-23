@@ -72,6 +72,11 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
     private CycleState state = CycleState.IDLE;
     private Predicate<MerchantOffer> desiredTradePredicate = null;
     private boolean autoLock = false;
+    private boolean humanMode = false;
+    
+    // Human mode randomization
+    private final java.util.Random random = new java.util.Random();
+    private int humanDelayTicks = 0;  // Extra delay for human-like pauses
 
     // Statistics
     private int cycleCount = 0;
@@ -183,7 +188,7 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
     }
 
     @Override
-    public void startCycling(Predicate<MerchantOffer> desiredTrade, boolean autoLock) {
+    public void startCycling(Predicate<MerchantOffer> desiredTrade, boolean autoLock, boolean humanMode) {
         // Validate setup
         if (targetVillager == null) {
             logDirect("Error: No villager selected. Run #trade setup first.");
@@ -210,6 +215,8 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         this.workstationBlock = heldBlock;
         this.desiredTradePredicate = desiredTrade;
         this.autoLock = autoLock;
+        this.humanMode = humanMode;
+        this.humanDelayTicks = 0;
         this.cycleCount = 0;
         this.startTimeMs = System.currentTimeMillis();
         this.tradesChecked = 0;
@@ -243,6 +250,47 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         // Villagers work roughly from 0 (6 AM) to 12000 (6 PM)
         // They sleep from about 12000 to 23999
         return dayTime < 12000;
+    }
+
+    // ==================== Human Mode Helpers ====================
+
+    /**
+     * Get a random delay in ticks for human-like behavior.
+     * @param minTicks Minimum delay
+     * @param maxTicks Maximum delay
+     * @return Random delay in ticks, or 0 if human mode is disabled
+     */
+    private int getHumanDelay(int minTicks, int maxTicks) {
+        if (!humanMode) return 0;
+        return minTicks + random.nextInt(maxTicks - minTicks + 1);
+    }
+
+    /**
+     * Check if we should take a random "human pause" (occasional longer break).
+     * About 5% chance per cycle.
+     */
+    private boolean shouldTakeHumanPause() {
+        return humanMode && random.nextInt(20) == 0;
+    }
+
+    /**
+     * Get a small random offset for look positions to appear more human.
+     * @return Random offset between -0.1 and 0.1
+     */
+    private double getHumanLookOffset() {
+        if (!humanMode) return 0;
+        return (random.nextDouble() - 0.5) * 0.2;  // -0.1 to 0.1
+    }
+
+    /**
+     * Apply human delay if active. Returns true if still waiting.
+     */
+    private boolean applyHumanDelay() {
+        if (humanDelayTicks > 0) {
+            humanDelayTicks--;
+            return true;
+        }
+        return false;
     }
 
     @Override
@@ -298,6 +346,22 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
             baritone.getInputOverrideHandler().clearAllKeys();
             previousState = state;
             ticksInState = 0;
+            
+            // Add random human delay when entering certain states
+            if (humanMode) {
+                switch (state) {
+                    case MOVING_TO_VILLAGER -> humanDelayTicks = getHumanDelay(5, 20);  // 0.25-1 sec before moving
+                    case OPENING_TRADE_GUI -> humanDelayTicks = getHumanDelay(3, 10);   // Small delay before clicking
+                    case CLOSING_TRADE_GUI -> humanDelayTicks = getHumanDelay(5, 15);   // Delay before closing
+                    case BREAKING_WORKSTATION -> humanDelayTicks = getHumanDelay(5, 25); // Delay before breaking
+                    default -> {}
+                }
+            }
+        }
+        
+        // Apply human delay if active
+        if (applyHumanDelay()) {
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
         ticksInState++;
 
@@ -508,8 +572,9 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
 
-        // Look at villager and interact
-        Vec3 villagerEyes = targetVillager.getEyePosition();
+        // Look at villager and interact (with slight random offset in human mode)
+        Vec3 villagerEyes = targetVillager.getEyePosition()
+                .add(getHumanLookOffset(), getHumanLookOffset(), getHumanLookOffset());
         Rotation rot = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), villagerEyes, ctx.playerRotations());
 
         baritone.getLookBehavior().updateTarget(rot, true);
@@ -692,6 +757,12 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
                 // Ready to start next cycle - but check if it's daytime first
                 if (isVillagerWorkTime()) {
                     state = CycleState.PLACING_WORKSTATION;
+                    
+                    // Occasional longer pause in human mode (simulates checking phone, etc.)
+                    if (shouldTakeHumanPause()) {
+                        humanDelayTicks = getHumanDelay(40, 100);  // 2-5 second pause
+                        logDirect("(Taking a brief pause...)");
+                    }
                 } else {
                     logDirect("Night time - waiting for villagers to wake up...");
                     state = CycleState.WAITING_FOR_DAYTIME;
