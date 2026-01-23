@@ -252,6 +252,8 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         }
         state = CycleState.IDLE;
         desiredTradePredicate = null;
+        // Ensure block breaking is re-enabled (might have been disabled during item collection)
+        Baritone.settings().allowBreak.value = true;
         baritone.getInputOverrideHandler().clearAllKeys();
     }
 
@@ -327,6 +329,9 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
             case WAITING_FOR_RESET:
                 return handleWaitingForReset();
 
+            case COLLECTING_ITEM:
+                return handleCollectingItem();
+
             case FOUND:
                 // Stay paused, player can see the trade
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -365,14 +370,21 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
 
-        // Check if we're close enough to place
         BetterBlockPos playerPos = ctx.playerFeet();
-        double distSq = playerPos.distSqr(workstationPos);
         double reachDist = ctx.playerController().getBlockReachDistance();
 
+        // Check if player is standing IN the workstation position - need to move out of the way!
+        if (playerPos.equals(workstationPos) || playerPos.equals(workstationPos.below())) {
+            // Player is in the way, move to the side
+            Goal goal = new GoalNear(workstationPos, 2);
+            return new PathingCommand(goal, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
+        }
+
+        // Check if we're close enough to place
+        double distSq = playerPos.distSqr(workstationPos);
         if (distSq > reachDist * reachDist) {
-            // Need to move closer
-            Goal goal = new GoalNear(workstationPos, 3);
+            // Need to move closer (but not INTO the position)
+            Goal goal = new GoalNear(workstationPos, 2);
             return new PathingCommand(goal, PathingCommandType.SET_GOAL_AND_PATH);
         }
 
@@ -393,7 +405,14 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         // Make sure we have the workstation in hand (allow searching full inventory)
         if (!baritone.getInventoryBehavior().throwaway(true, stack ->
                 stack.getItem() instanceof BlockItem bi && bi.getBlock() == workstationBlock, true)) {
-            logDirect("Error: No workstation block in inventory");
+            // No workstation in inventory - check for dropped items nearby
+            if (findNearbyWorkstationItem() != null) {
+                logDirect("No workstation in inventory - collecting dropped item...");
+                state = CycleState.COLLECTING_ITEM;
+                ticksWaited = 0;
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+            logDirect("Error: No workstation block in inventory or nearby");
             state = CycleState.FAILED;
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
@@ -701,6 +720,102 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
     }
 
+    private PathingCommand handleCollectingItem() {
+        ticksWaited++;
+
+        // IMPORTANT: Disable block breaking while collecting items to avoid breaking player's builds
+        // This is set every tick to ensure pathfinding doesn't break blocks
+        Baritone.settings().allowBreak.value = false;
+
+        // Check if we now have the item in inventory
+        if (hasWorkstationInInventory()) {
+            logDirect("Workstation collected! Resuming...");
+            // Re-enable block breaking for normal operation
+            Baritone.settings().allowBreak.value = true;
+            state = CycleState.PLACING_WORKSTATION;
+            ticksWaited = 0;
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        // Find nearby workstation item entity - search fresh every tick since items can move!
+        net.minecraft.world.entity.item.ItemEntity itemEntity = findNearbyWorkstationItem();
+        if (itemEntity == null) {
+            // No item found nearby
+            if (ticksWaited > 100) {
+                logDirect("Error: Could not find workstation item to collect");
+                // Re-enable block breaking
+                Baritone.settings().allowBreak.value = true;
+                state = CycleState.FAILED;
+            }
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        // Get item's CURRENT position (items can move/bounce)
+        BlockPos itemPos = itemEntity.blockPosition();
+        BetterBlockPos playerPos = ctx.playerFeet();
+        double distSq = playerPos.distSqr(itemPos);
+
+        // If we're close enough, just wait for auto-pickup
+        if (distSq < 4) {
+            // Very close, should auto-pickup
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        // Timeout if we can't reach it (might be blocked by something)
+        if (ticksWaited > 200) {
+            logDirect("Error: Could not reach workstation item (blocked?)");
+            // Re-enable block breaking
+            Baritone.settings().allowBreak.value = true;
+            state = CycleState.FAILED;
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        // Walk towards the item's CURRENT position
+        // Use FORCE_REVALIDATE to ensure path updates if item moved to a new location
+        Goal goal = new GoalNear(itemPos, 1);
+        return new PathingCommand(goal, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
+    }
+
+    /**
+     * Find a nearby dropped workstation item entity.
+     */
+    @Nullable
+    private net.minecraft.world.entity.item.ItemEntity findNearbyWorkstationItem() {
+        if (workstationBlock == null) {
+            return null;
+        }
+
+        // Search within 10 blocks of the workstation position
+        BlockPos searchCenter = workstationPos != null ? workstationPos : ctx.playerFeet();
+        AABB searchBox = new AABB(searchCenter).inflate(10);
+
+        for (net.minecraft.world.entity.Entity entity : ctx.world().getEntities(ctx.player(), searchBox)) {
+            if (entity instanceof net.minecraft.world.entity.item.ItemEntity itemEntity) {
+                ItemStack stack = itemEntity.getItem();
+                if (stack.getItem() instanceof BlockItem bi && bi.getBlock() == workstationBlock) {
+                    return itemEntity;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Check if player has workstation block in inventory.
+     */
+    private boolean hasWorkstationInInventory() {
+        if (workstationBlock == null) {
+            return false;
+        }
+        for (int i = 0; i < 36; i++) {
+            ItemStack stack = ctx.player().getInventory().getItem(i);
+            if (stack.getItem() instanceof BlockItem bi && bi.getBlock() == workstationBlock) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private PathingCommand handleAutoLocking(boolean isSafeToCancel) {
         // TODO: Implement auto-lock trading
         // This would involve selecting the found trade and completing one transaction
@@ -722,6 +837,8 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         state = CycleState.IDLE;
         desiredTradePredicate = null;
         baritone.getInputOverrideHandler().clearAllKeys();
+        // Ensure block breaking is re-enabled (might have been disabled during item collection)
+        Baritone.settings().allowBreak.value = true;
     }
 
     @Override

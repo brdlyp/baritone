@@ -215,6 +215,8 @@ public interface IVillagerTradeProcess extends IBaritoneProcess {
         BREAKING_WORKSTATION,
         /** Waiting after breaking workstation for villager to lose profession */
         WAITING_FOR_RESET,
+        /** Collecting dropped workstation item */
+        COLLECTING_ITEM,
         /** Desired trade found! */
         FOUND,
         /** Auto-locking the trade by making a purchase */
