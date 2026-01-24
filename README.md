@@ -1,3 +1,62 @@
+# Baritone (brdlyp's Fork)
+
+> **This is a fork of [cabaletta/baritone](https://github.com/cabaletta/baritone) with additional features for Minecraft 1.21.8.**
+
+## Fork Additions
+
+This fork adds **Villager Trade Automation** - a system to automatically cycle librarian villagers to find specific enchanted books (Mending, Sharpness V, Protection IV, etc.).
+
+### Features Added
+
+- **`#trade` command** - Full command interface for villager trade cycling
+- **Automatic trade cycling** - Place/break workstations to reset villager trades
+- **Enchantment search** - Search for specific enchantments by name and level
+- **Preset support** - Built-in presets like `sword_best`, `helmet_best`, `all_best`
+- **Human-like behavior mode** - Adds randomized delays to appear more natural
+- **Auto-lock option** - Automatically make a trade to lock the profession when found
+- **Item collection** - Handles dropped workstation items during cycling
+
+### Quick Start
+
+```
+#trade setup              - Enter setup mode (click villager, then click workstation position)
+#trade cycle mending      - Cycle until Mending book is found
+#trade cycle "sharpness 5" autolock  - Find Sharpness V and auto-lock the trade
+#trade stop               - Stop cycling
+#trade status             - Show cycle statistics
+```
+
+See [VillagerTradeAutomate.md](VillagerTradeAutomate.md) for full documentation.
+
+---
+
+## Fork Changelog
+
+### v1.21.8-fork.1 (January 2026)
+
+**New Features:**
+- Added `VillagerTradeProcess` - State machine for automated villager trade cycling
+- Added `TradeCommand` - Chat command interface (`#trade setup`, `#trade cycle`, etc.)
+- Added `MerchantOffersEvent` - Event fired when trade offers are received from server
+- Added mixin hook for `ClientboundMerchantOffersPacket` to capture trade data
+
+**Enhancements:**
+- Human-like behavior mode with randomized delays and look offsets
+- Support for enchantment presets (e.g., `sword_best`, `pickaxe_best`)
+- Automatic workstation item collection when dropped during cycling
+- Configurable timing settings for all cycle phases
+
+**Technical:**
+- Extended `MixinClientPlayNetHandler` with merchant offers packet handling
+- Added `IVillagerTradeProcess` API interface
+- Integrated with existing Baritone process and event systems
+
+---
+
+*Original Baritone README below*
+
+---
+
 # Baritone
 <p align="center">
   <a href="https://github.com/cabaletta/baritone/releases/"><img src="https://img.shields.io/github/downloads/cabaletta/baritone/total.svg" alt="GitHub All Releases"/></a>
