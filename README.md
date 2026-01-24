@@ -2,7 +2,7 @@
 
 > **This is a fork of [cabaletta/baritone](https://github.com/cabaletta/baritone) with additional features for Minecraft 1.21.8.**
 
-## Fork Additions
+## Fork Additions and Stuff
 
 This fork adds **Villager Trade Automation** - a system to automatically cycle librarian villagers to find specific enchanted books (Mending, Sharpness V, Protection IV, etc.).
 
