@@ -19,9 +19,10 @@ This fork adds **Villager Trade Automation** - a system to automatically cycle l
 ### Quick Start
 
 ```
-#trade setup              - Enter setup mode (click villager, then click workstation position)
-#trade cycle mending      - Cycle until Mending book is found
-#trade cycle "sharpness 5" autolock  - Find Sharpness V and auto-lock the trade
+#trade setvil             - Select the villager you're looking at
+#trade setpos             - Select the workstation placement position you're looking at
+#trade cycle mending      - Cycle until Mending book is found (hold lectern in hand)
+#trade cycle mending -human  - Cycle with human-like randomized delays
 #trade stop               - Stop cycling
 #trade status             - Show cycle statistics
 ```
