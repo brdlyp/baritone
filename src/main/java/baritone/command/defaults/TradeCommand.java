@@ -580,9 +580,9 @@ public class TradeCommand extends Command {
 
         // Find the last comma to get the current enchantment being typed
         int lastComma = inner.lastIndexOf(',');
-        String prefix;
-        String beforeCurrent;
-        String spacingAfterComma = "";  // Preserve user's spacing (or lack thereof)
+        final String prefix;
+        final String beforeCurrent;
+        final String spacingAfterComma;  // Preserve user's spacing (or lack thereof)
 
         if (lastComma >= 0) {
             beforeCurrent = inner.substring(0, lastComma + 1);
@@ -596,6 +596,7 @@ public class TradeCommand extends Command {
             prefix = afterComma.substring(firstNonSpace).toLowerCase();
         } else {
             beforeCurrent = "";
+            spacingAfterComma = "";
             prefix = inner.trim().toLowerCase();
         }
 
