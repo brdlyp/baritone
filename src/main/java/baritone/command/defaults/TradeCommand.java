@@ -57,52 +57,60 @@ import java.util.stream.Stream;
  */
 public class TradeCommand extends Command {
 
-    // Valid enchantment identifiers (resource location style)
-    private static final Set<String> VALID_ENCHANTMENTS = Set.of(
-            "aqua_affinity",
-            "bane_of_arthropods",
-            "binding_curse",
-            "blast_protection",
-            "breach",
-            "channeling",
-            "density",
-            "depth_strider",
-            "efficiency",
-            "feather_falling",
-            "fire_aspect",
-            "fire_protection",
-            "flame",
-            "fortune",
-            "frost_walker",
-            "impaling",
-            "infinity",
-            "knockback",
-            "looting",
-            "loyalty",
-            "luck_of_the_sea",
-            "lunge",
-            "lure",
-            "mending",
-            "multishot",
-            "piercing",
-            "power",
-            "projectile_protection",
-            "protection",
-            "punch",
-            "quick_charge",
-            "respiration",
-            "riptide",
-            "sharpness",
-            "silk_touch",
-            "smite",
-            "soul_speed",
-            "sweeping_edge",
-            "swift_sneak",
-            "thorns",
-            "unbreaking",
-            "vanishing_curse",
-            "wind_burst"
+    // Valid enchantment identifiers (resource location style) with their max levels
+    private static final Map<String, Integer> ENCHANTMENT_MAX_LEVELS = Map.ofEntries(
+            // Max level 1
+            Map.entry("aqua_affinity", 1),
+            Map.entry("binding_curse", 1),
+            Map.entry("channeling", 1),
+            Map.entry("flame", 1),
+            Map.entry("infinity", 1),
+            Map.entry("mending", 1),
+            Map.entry("multishot", 1),
+            Map.entry("silk_touch", 1),
+            Map.entry("vanishing_curse", 1),
+            // Max level 2
+            Map.entry("fire_aspect", 2),
+            Map.entry("frost_walker", 2),
+            Map.entry("knockback", 2),
+            Map.entry("punch", 2),
+            // Max level 3
+            Map.entry("depth_strider", 3),
+            Map.entry("fortune", 3),
+            Map.entry("looting", 3),
+            Map.entry("loyalty", 3),
+            Map.entry("luck_of_the_sea", 3),
+            Map.entry("lunge", 3),
+            Map.entry("lure", 3),
+            Map.entry("quick_charge", 3),
+            Map.entry("respiration", 3),
+            Map.entry("riptide", 3),
+            Map.entry("soul_speed", 3),
+            Map.entry("sweeping_edge", 3),
+            Map.entry("swift_sneak", 3),
+            Map.entry("thorns", 3),
+            Map.entry("unbreaking", 3),
+            Map.entry("wind_burst", 3),
+            // Max level 4
+            Map.entry("blast_protection", 4),
+            Map.entry("breach", 4),
+            Map.entry("feather_falling", 4),
+            Map.entry("fire_protection", 4),
+            Map.entry("piercing", 4),
+            Map.entry("projectile_protection", 4),
+            Map.entry("protection", 4),
+            // Max level 5
+            Map.entry("bane_of_arthropods", 5),
+            Map.entry("density", 5),
+            Map.entry("efficiency", 5),
+            Map.entry("impaling", 5),
+            Map.entry("power", 5),
+            Map.entry("sharpness", 5),
+            Map.entry("smite", 5)
     );
+
+    // Valid enchantment identifiers (derived from the max levels map)
+    private static final Set<String> VALID_ENCHANTMENTS = ENCHANTMENT_MAX_LEVELS.keySet();
 
     // Enchantment presets for common "best" enchantments
     private static final Map<String, List<EnchantmentCriteria>> PRESETS = new HashMap<>();
@@ -595,11 +603,13 @@ public class TradeCommand extends Command {
             String[] parts = prefix.split(":", 2);
             String enchantName = parts[0];
 
-            // Verify the enchantment name is valid
-            if (VALID_ENCHANTMENTS.contains(enchantName)) {
+            // Verify the enchantment name is valid and get its max level
+            Integer maxLevel = ENCHANTMENT_MAX_LEVELS.get(enchantName);
+            if (maxLevel != null) {
                 String levelPrefix = parts.length > 1 ? parts[1] : "";
-                // Suggest levels 1-5 for most enchantments
-                return Stream.of("1", "2", "3", "4", "5")
+                // Suggest levels 1 to maxLevel for this enchantment
+                return java.util.stream.IntStream.rangeClosed(1, maxLevel)
+                        .mapToObj(String::valueOf)
                         .filter(lvl -> lvl.startsWith(levelPrefix))
                         .map(lvl -> wrapperPrefix + enchantName + ":" + lvl);
             }
