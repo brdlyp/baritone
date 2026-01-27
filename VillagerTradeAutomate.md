@@ -15,7 +15,7 @@ This document describes the **villager trade cycling automation** feature in thi
 ```
 1. Look at an unemployed villager and run:  #trade setvil
 2. Look at where to place the lectern and run:  #trade setpos
-3. Hold a lectern in your main hand
+3. Have a lectern in your hotbar (will be auto-selected)
 4. Run:  #trade cycle mending
 ```
 
@@ -124,37 +124,34 @@ When `-human` flag is enabled:
 │                    AUTOMATED TRADE CYCLING                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  1. WAIT FOR DAYTIME (if needed)                                 │
-│     └─► Villagers only change profession during work hours       │
-│                                                                  │
-│  2. PLACE WORKSTATION                                            │
+│  1. PLACE WORKSTATION                                            │
 │     └─► Places lectern at the configured position                │
 │     └─► Villager claims job (becomes Librarian)                  │
 │                                                                  │
-│  3. WAIT FOR PROFESSION                                          │
+│  2. WAIT FOR PROFESSION                                          │
 │     └─► Wait for villager to pathfind and claim workstation      │
 │     └─► Timeout and retry if villager doesn't claim              │
 │                                                                  │
-│  4. MOVE TO VILLAGER                                             │
+│  3. MOVE TO VILLAGER                                             │
 │     └─► Path to within interaction range                         │
 │                                                                  │
-│  5. OPEN TRADE GUI                                               │
+│  4. OPEN TRADE GUI                                               │
 │     └─► Look at villager and right-click to interact             │
 │                                                                  │
-│  6. READ TRADES                                                  │
+│  5. READ TRADES                                                  │
 │     └─► Check trades against desired enchantment predicate       │
 │     ├─► MATCH FOUND? ──► Stop, notify player, optional auto-lock │
-│     └─► NO MATCH? ──► Continue to step 7                         │
+│     └─► NO MATCH? ──► Continue to step 6                         │
 │                                                                  │
-│  7. CLOSE GUI & BREAK WORKSTATION                                │
+│  6. CLOSE GUI & BREAK WORKSTATION                                │
 │     └─► Close trade interface                                    │
 │     └─► Break the lectern block                                  │
 │                                                                  │
-│  8. WAIT FOR RESET                                               │
+│  7. WAIT FOR RESET                                               │
 │     └─► Wait for villager to lose profession                     │
 │     └─► Go back to step 1                                        │
 │                                                                  │
-│  9. COLLECT ITEM (if needed)                                     │
+│  8. COLLECT ITEM (if needed)                                     │
 │     └─► If lectern dropped as item, walk to collect it           │
 │     └─► Disables block breaking to avoid destroying builds       │
 │                                                                  │
@@ -168,7 +165,6 @@ When `-human` flag is enabled:
 | State | Description |
 |-------|-------------|
 | `IDLE` | Not cycling, waiting for command |
-| `WAITING_FOR_DAYTIME` | Waiting for villager work hours (daytime) |
 | `PLACING_WORKSTATION` | Placing the lectern block |
 | `WAITING_FOR_PROFESSION` | Waiting for villager to claim the workstation |
 | `MOVING_TO_VILLAGER` | Pathing to get within interaction range |
@@ -192,9 +188,10 @@ Before running `#trade cycle`:
    - Run `#trade setvil` while looking at an **unemployed** villager
    - Run `#trade setpos` while looking at the workstation placement position
 
-2. **Hold workstation in main hand:**
-   - Lectern (for Librarian)
+2. **Have workstation in hotbar:**
+   - Lectern (for Librarian) - prioritized if multiple workstations present
    - Or other workstation blocks for other professions
+   - Will be auto-selected when cycling starts
 
 3. **Villager must be:**
    - Unemployed (brown coat, no profession)
@@ -231,11 +228,12 @@ Bot:    Villager selected at [100, 64, 200]
 
 Player: #trade setpos                   (while looking at ground)
 Bot:    Workstation position set to [101, 65, 200]
-        Setup complete! Hold a lectern and run: #trade cycle <enchantment>
+        Setup complete! Have a lectern in your hotbar and run: #trade cycle <enchantment>
 
-Player: [holds Lectern in hand]
+Player: [has Lectern in hotbar]
 Player: #trade cycle mending
-Bot:    Starting trade cycling...
+Bot:    Auto-selected lectern from hotbar slot 3
+        Starting trade cycling...
         Looking for matching trade. Will cycle until found.
         Cycle 1: efficiency 3 (14 emeralds)
         Cycle 2: No book trade
@@ -300,8 +298,6 @@ Bot:    Cycling for: mending, silk_touch, fortune 3
 
 4. **Item Collection:** Automatically collects dropped workstation items; temporarily disables `allowBreak` to prevent destroying player builds while pathing to items
 
-5. **Day/Night Handling:** Detects nighttime and pauses cycling (villagers sleep and won't change profession at night)
-
 ---
 
 ## Known Limitations
@@ -324,10 +320,9 @@ The villager has already been traded with. You need an **unemployed villager tha
 ### "Timeout waiting for villager to claim workstation"
 - Make sure the workstation position is within 48 blocks of the villager
 - Ensure there's no block between the villager and workstation
-- Verify it's daytime (villagers don't change profession at night)
 
-### "No workstation block in inventory or nearby"
-- Make sure you're holding the workstation (lectern) in your main hand
+### "No workstation block found in hotbar"
+- Make sure you have a workstation (lectern) in your hotbar (slots 1-9)
 - If it dropped as an item, the bot will try to collect it automatically
 
 ### Villager keeps going to a different workstation

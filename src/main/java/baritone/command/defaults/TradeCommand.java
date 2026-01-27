@@ -181,7 +181,7 @@ public class TradeCommand extends Command {
                 logDirect("Trade Setup Instructions:");
                 logDirect("  1. Look at a villager and run: #trade setvil");
                 logDirect("  2. Look at where to place workstation and run: #trade setpos");
-                logDirect("  3. Hold a lectern in your hand");
+                logDirect("  3. Have a lectern in your hotbar (auto-selected)");
                 logDirect("  4. Run: #trade cycle <enchantment>");
                 
                 // Show current setup status
@@ -200,7 +200,7 @@ public class TradeCommand extends Command {
                     if (!setup.hasWorkstationPos()) {
                         logDirect("Now look at where to place the workstation and run: #trade setpos");
                     } else {
-                        logDirect("Setup complete! Hold a lectern and run: #trade cycle <enchantment>");
+                        logDirect("Setup complete! Have a lectern in your hotbar and run: #trade cycle <enchantment>");
                     }
                 } else {
                     logDirect("Error: Look at a villager first!");
@@ -215,7 +215,7 @@ public class TradeCommand extends Command {
                     if (!setup.hasVillager()) {
                         logDirect("Now look at a villager and run: #trade setvil");
                     } else {
-                        logDirect("Setup complete! Hold a lectern and run: #trade cycle <enchantment>");
+                        logDirect("Setup complete! Have a lectern in your hotbar and run: #trade cycle <enchantment>");
                     }
                 } else {
                     logDirect("Error: Look at a block first!");
@@ -485,7 +485,7 @@ public class TradeCommand extends Command {
                 "Requirements:",
                 "  - Run #trade setvil while looking at a villager",
                 "  - Run #trade setpos while looking at workstation placement spot",
-                "  - Hold workstation block (lectern) in main hand"
+                "  - Have workstation block (lectern) in hotbar (auto-selected)"
         );
     }
 

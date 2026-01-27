@@ -110,6 +110,57 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
             Blocks.STONECUTTER
     );
 
+    /**
+     * Find a workstation block in the hotbar and select it.
+     * Prioritizes lecterns, then checks other workstation blocks.
+     * @return The workstation block found, or null if none in hotbar
+     */
+    @Nullable
+    private Block findAndSelectWorkstationInHotbar() {
+        var inventory = ctx.player().getInventory();
+        
+        // First, check if currently held item is already a workstation
+        ItemStack heldItem = ctx.player().getMainHandItem();
+        if (!heldItem.isEmpty() && heldItem.getItem() instanceof BlockItem blockItem) {
+            Block heldBlock = blockItem.getBlock();
+            if (WORKSTATION_BLOCKS.contains(heldBlock)) {
+                return heldBlock;  // Already holding a workstation
+            }
+        }
+        
+        // Search hotbar (slots 0-8) for workstation blocks, prioritizing lecterns
+        int lecternSlot = -1;
+        int otherWorkstationSlot = -1;
+        Block otherWorkstationBlock = null;
+        
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
+                Block block = blockItem.getBlock();
+                if (block == Blocks.LECTERN) {
+                    lecternSlot = i;
+                    break;  // Lectern is preferred, stop searching
+                } else if (WORKSTATION_BLOCKS.contains(block) && otherWorkstationSlot == -1) {
+                    otherWorkstationSlot = i;
+                    otherWorkstationBlock = block;
+                }
+            }
+        }
+        
+        // Select the best option found
+        if (lecternSlot != -1) {
+            inventory.setSelectedSlot(lecternSlot);
+            logDirect("Auto-selected lectern from hotbar slot " + (lecternSlot + 1));
+            return Blocks.LECTERN;
+        } else if (otherWorkstationSlot != -1) {
+            inventory.setSelectedSlot(otherWorkstationSlot);
+            logDirect("Auto-selected " + otherWorkstationBlock.getName().getString() + " from hotbar slot " + (otherWorkstationSlot + 1));
+            return otherWorkstationBlock;
+        }
+        
+        return null;  // No workstation found in hotbar
+    }
+
     public VillagerTradeProcess(Baritone baritone) {
         super(baritone);
 
@@ -199,16 +250,10 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
             return;
         }
 
-        // Get workstation block from player's hand
-        ItemStack heldItem = ctx.player().getMainHandItem();
-        if (heldItem.isEmpty() || !(heldItem.getItem() instanceof BlockItem blockItem)) {
-            logDirect("Error: Hold a workstation block in your main hand.");
-            return;
-        }
-
-        Block heldBlock = blockItem.getBlock();
-        if (!WORKSTATION_BLOCKS.contains(heldBlock)) {
-            logDirect("Error: That's not a valid workstation block.");
+        // Try to find and select a workstation block from the hotbar
+        Block heldBlock = findAndSelectWorkstationInHotbar();
+        if (heldBlock == null) {
+            logDirect("Error: No workstation block found in hotbar. Place a lectern (or other workstation) in your hotbar.");
             return;
         }
 
@@ -225,31 +270,14 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         this.ticksWaited = 0;
         this.ticksInState = 0;
 
-        // Start the cycle - check daytime first
+        // Start the cycle
         logDirect("Starting trade cycling...");
         logDirect("Looking for matching trade. Will cycle until found.");
         if (autoLock) {
             logDirect("Auto-lock enabled: will trade once to lock profession when found.");
         }
         
-        // Check if it's work time for villagers
-        if (isVillagerWorkTime()) {
-            state = CycleState.PLACING_WORKSTATION;
-        } else {
-            state = CycleState.WAITING_FOR_DAYTIME;
-            logDirect("It's nighttime - waiting for villagers to wake up...");
-        }
-    }
-
-    /**
-     * Check if it's daytime when villagers work (roughly 0-12000 ticks).
-     * Villagers sleep from about 12000 to 24000 (or 0) ticks.
-     */
-    private boolean isVillagerWorkTime() {
-        long dayTime = ctx.world().getDayTime() % 24000;
-        // Villagers work roughly from 0 (6 AM) to 12000 (6 PM)
-        // They sleep from about 12000 to 23999
-        return dayTime < 12000;
+        state = CycleState.PLACING_WORKSTATION;
     }
 
     // ==================== Human Mode Helpers ====================
@@ -366,9 +394,6 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         ticksInState++;
 
         switch (state) {
-            case WAITING_FOR_DAYTIME:
-                return handleWaitingForDaytime();
-
             case PLACING_WORKSTATION:
                 return handlePlacingWorkstation(isSafeToCancel);
 
@@ -409,22 +434,6 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
             default:
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
-    }
-
-    private PathingCommand handleWaitingForDaytime() {
-        // Check every second (20 ticks)
-        if (ticksInState % 20 == 0) {
-            if (isVillagerWorkTime()) {
-                logDirect("Daytime! Resuming trade cycling...");
-                state = CycleState.PLACING_WORKSTATION;
-                ticksWaited = 0;
-            } else if (ticksInState % 200 == 0) {
-                // Log every 10 seconds
-                long dayTime = ctx.world().getDayTime() % 24000;
-                logDirect("Waiting for daytime... (current time: " + dayTime + "/24000)");
-            }
-        }
-        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
     }
 
     private PathingCommand handlePlacingWorkstation(boolean isSafeToCancel) {
@@ -499,6 +508,14 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
 
     private PathingCommand handleWaitingForProfession() {
         ticksWaited++;
+
+        // Look at the villager while waiting (looks more natural in third person)
+        if (targetVillager != null && targetVillager.isAlive()) {
+            Vec3 villagerEyes = targetVillager.getEyePosition()
+                    .add(getHumanLookOffset(), getHumanLookOffset(), getHumanLookOffset());
+            Rotation rot = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), villagerEyes, ctx.playerRotations());
+            baritone.getLookBehavior().updateTarget(rot, true);
+        }
 
         // Check if villager has gained profession (use .is() for Holder comparison)
         if (targetVillager != null && !targetVillager.getVillagerData().profession().is(VillagerProfession.NONE)) {
@@ -754,18 +771,13 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
         // Wait for villager to lose profession (use .is() for Holder comparison)
         if (targetVillager != null && targetVillager.getVillagerData().profession().is(VillagerProfession.NONE)) {
             if (ticksWaited > Baritone.settings().villagerWorkstationBreakDelayTicks.value) {
-                // Ready to start next cycle - but check if it's daytime first
-                if (isVillagerWorkTime()) {
-                    state = CycleState.PLACING_WORKSTATION;
-                    
-                    // Occasional longer pause in human mode (simulates checking phone, etc.)
-                    if (shouldTakeHumanPause()) {
-                        humanDelayTicks = getHumanDelay(40, 100);  // 2-5 second pause
-                        logDirect("(Taking a brief pause...)");
-                    }
-                } else {
-                    logDirect("Night time - waiting for villagers to wake up...");
-                    state = CycleState.WAITING_FOR_DAYTIME;
+                // Ready to start next cycle
+                state = CycleState.PLACING_WORKSTATION;
+                
+                // Occasional longer pause in human mode (simulates checking phone, etc.)
+                if (shouldTakeHumanPause()) {
+                    humanDelayTicks = getHumanDelay(40, 100);  // 2-5 second pause
+                    logDirect("(Taking a brief pause...)");
                 }
                 ticksWaited = 0;
                 ticksInState = 0;
