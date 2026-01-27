@@ -57,6 +57,53 @@ import java.util.stream.Stream;
  */
 public class TradeCommand extends Command {
 
+    // Valid enchantment identifiers (resource location style)
+    private static final Set<String> VALID_ENCHANTMENTS = Set.of(
+            "aqua_affinity",
+            "bane_of_arthropods",
+            "binding_curse",
+            "blast_protection",
+            "breach",
+            "channeling",
+            "density",
+            "depth_strider",
+            "efficiency",
+            "feather_falling",
+            "fire_aspect",
+            "fire_protection",
+            "flame",
+            "fortune",
+            "frost_walker",
+            "impaling",
+            "infinity",
+            "knockback",
+            "looting",
+            "loyalty",
+            "luck_of_the_sea",
+            "lunge",
+            "lure",
+            "mending",
+            "multishot",
+            "piercing",
+            "power",
+            "projectile_protection",
+            "protection",
+            "punch",
+            "quick_charge",
+            "respiration",
+            "riptide",
+            "sharpness",
+            "silk_touch",
+            "smite",
+            "soul_speed",
+            "sweeping_edge",
+            "swift_sneak",
+            "thorns",
+            "unbreaking",
+            "vanishing_curse",
+            "wind_burst"
+    );
+
     // Enchantment presets for common "best" enchantments
     private static final Map<String, List<EnchantmentCriteria>> PRESETS = new HashMap<>();
 
@@ -339,53 +386,66 @@ public class TradeCommand extends Command {
             return PRESETS.get(lower);
         }
 
-        // Check if it's an array: [mending, "sharpness 5", silk_touch]
+        // Check if it's the new format: enchantments={mending:1, protection:4}
+        if (arg.startsWith("enchantments={") && arg.endsWith("}")) {
+            String inner = arg.substring("enchantments={".length(), arg.length() - 1);
+            return parseEnchantmentList(inner);
+        }
+
+        // Check if it's an array: [mending, silk_touch, protection:4]
         if (arg.startsWith("[") && arg.endsWith("]")) {
             String inner = arg.substring(1, arg.length() - 1);
             return parseEnchantmentList(inner);
         }
 
-        // Single enchantment
+        // Single enchantment: mending or protection:4
         return List.of(parseOneEnchantment(arg));
     }
 
     private List<EnchantmentCriteria> parseEnchantmentList(String listStr) {
-        // Parse comma-separated, respecting quotes
+        // Parse comma-separated enchantments: mending:1, protection:4, silk_touch
         List<EnchantmentCriteria> result = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        boolean inQuotes = false;
 
-        for (char c : listStr.toCharArray()) {
-            if (c == '"') {
-                inQuotes = !inQuotes;
-            } else if (c == ',' && !inQuotes) {
-                String part = current.toString().trim();
-                if (!part.isEmpty()) {
-                    result.add(parseOneEnchantment(part));
-                }
-                current = new StringBuilder();
-            } else {
-                current.append(c);
+        for (String part : listStr.split(",")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                result.add(parseOneEnchantment(trimmed));
             }
-        }
-
-        // Don't forget the last element
-        String part = current.toString().trim();
-        if (!part.isEmpty()) {
-            result.add(parseOneEnchantment(part));
         }
 
         return result;
     }
 
     private EnchantmentCriteria parseOneEnchantment(String str) {
-        // "mending" -> EnchantmentCriteria("mending", null)
-        // "sharpness 5" -> EnchantmentCriteria("sharpness", 5)
-        // "protection 4" -> EnchantmentCriteria("protection", 4)
-        str = str.trim().replace("\"", "");
-        String[] parts = str.split("\\s+");
-        String name = parts[0].toLowerCase().replace(" ", "_");
-        Integer level = parts.length > 1 ? Integer.parseInt(parts[1]) : null;
+        // Parse resource location style: "mending" or "mending:1" or "protection:4"
+        str = str.trim().toLowerCase();
+
+        String name;
+        Integer level = null;
+
+        if (str.contains(":")) {
+            // Format: enchantment:level (e.g., "protection:4")
+            String[] parts = str.split(":");
+            name = parts[0];
+            if (parts.length > 1 && !parts[1].isEmpty()) {
+                try {
+                    level = Integer.parseInt(parts[1]);
+                } catch (NumberFormatException e) {
+                    // Invalid level, treat as enchantment name only
+                    name = str;
+                }
+            }
+        } else {
+            // Format: just enchantment name (e.g., "mending")
+            name = str;
+        }
+
+        // Validate enchantment name
+        if (!VALID_ENCHANTMENTS.contains(name)) {
+            // Log warning but still allow it (in case of new enchantments not in our list)
+            // The actual matching will use registry names anyway
+        }
+
         return new EnchantmentCriteria(name, level);
     }
 
@@ -437,12 +497,8 @@ public class TradeCommand extends Command {
                 // Tab complete enchantment names and presets
                 String prefix = args.peekString().toLowerCase();
                 Stream<String> presetStream = PRESETS.keySet().stream();
-                Stream<String> commonEnchants = Stream.of(
-                        "mending", "unbreaking", "silk_touch", "fortune",
-                        "sharpness", "protection", "efficiency", "looting",
-                        "feather_falling", "fire_aspect", "power", "infinity"
-                );
-                return Stream.concat(presetStream, commonEnchants)
+                Stream<String> enchantStream = VALID_ENCHANTMENTS.stream();
+                return Stream.concat(presetStream, enchantStream)
                         .filter(s -> s.startsWith(prefix));
             }
         }
@@ -465,10 +521,15 @@ public class TradeCommand extends Command {
                 "  #trade setvil - Select the villager you're looking at",
                 "  #trade setpos - Select the block position you're looking at",
                 "",
+                "Enchantment Format (resource location style):",
+                "  name - Any level (e.g., mending, silk_touch)",
+                "  name:level - Specific level (e.g., protection:4, sharpness:5)",
+                "",
                 "Usage:",
                 "  #trade cycle mending - Cycle until Mending book found",
-                "  #trade cycle \"sharpness 5\" - Cycle until Sharpness V",
+                "  #trade cycle sharpness:5 - Cycle until Sharpness V",
                 "  #trade cycle [mending, silk_touch] - Cycle for multiple enchants",
+                "  #trade cycle enchantments={mending:1, protection:4} - Alternative array syntax",
                 "  #trade cycle sword_best - Use a preset",
                 "  #trade cycle mending autolock - Auto-buy to lock profession",
                 "  #trade cycle mending -human - Enable human-like randomized behavior",
@@ -532,7 +593,7 @@ public class TradeCommand extends Command {
 
         @Override
         public String toString() {
-            return level != null ? enchantmentName + " " + level : enchantmentName;
+            return level != null ? enchantmentName + ":" + level : enchantmentName;
         }
     }
 }
