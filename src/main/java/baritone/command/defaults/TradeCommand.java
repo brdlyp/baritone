@@ -282,8 +282,37 @@ public class TradeCommand extends Command {
                     throw new CommandInvalidStateException("No workstation position set. Run #trade setup first.");
                 }
 
-                // Parse enchantment argument
+                // Parse enchantment argument - need to handle arrays with spaces
+                // e.g., [protection:4, mending, thorns:3] gets split by the arg parser
                 String enchantArg = args.getString();
+                
+                // If it starts with [ but doesn't end with ], keep consuming until we find ]
+                if (enchantArg.startsWith("[") && !enchantArg.endsWith("]")) {
+                    StringBuilder sb = new StringBuilder(enchantArg);
+                    while (args.hasAny() && !sb.toString().endsWith("]")) {
+                        String next = args.peekString();
+                        // Stop if we hit a flag
+                        if (next.equalsIgnoreCase("autolock") || next.startsWith("-")) {
+                            break;
+                        }
+                        sb.append(args.getString());
+                    }
+                    enchantArg = sb.toString();
+                }
+                
+                // Same for enchantments={...} syntax
+                if (enchantArg.startsWith("enchantments={") && !enchantArg.endsWith("}")) {
+                    StringBuilder sb = new StringBuilder(enchantArg);
+                    while (args.hasAny() && !sb.toString().endsWith("}")) {
+                        String next = args.peekString();
+                        // Stop if we hit a flag
+                        if (next.equalsIgnoreCase("autolock") || next.startsWith("-")) {
+                            break;
+                        }
+                        sb.append(args.getString());
+                    }
+                    enchantArg = sb.toString();
+                }
                 boolean autolock = false;
                 boolean humanMode = false;
 
