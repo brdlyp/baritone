@@ -682,7 +682,10 @@ public final class VillagerTradeProcess extends BaritoneProcessHelper implements
                 if (storedEnchants != null && !storedEnchants.isEmpty()) {
                     for (var enchant : storedEnchants.keySet()) {
                         int level = storedEnchants.getLevel(enchant);
-                        String name = enchant.getRegisteredName();
+                        String rawName = enchant.getRegisteredName();
+                        // DEBUG: Log raw registry name
+                        System.out.println("[DEBUG logTrade] rawRegisteredName='" + rawName + "', holderType=" + enchant.getClass().getSimpleName());
+                        String name = rawName;
                         if (name != null) {
                             name = name.replace("minecraft:", "");
                         } else {

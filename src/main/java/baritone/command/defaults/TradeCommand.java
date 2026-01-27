@@ -340,8 +340,19 @@ public class TradeCommand extends Command {
 
                 // Parse enchantments (single, array, or preset)
                 List<EnchantmentCriteria> criteria = parseEnchantments(enchantArg);
-                Predicate<MerchantOffer> predicate = offer ->
-                        criteria.stream().anyMatch(c -> c.matches(offer));
+                
+                // DEBUG: Log parsed criteria
+                System.out.println("[DEBUG Criteria] Parsed " + criteria.size() + " criteria:");
+                for (EnchantmentCriteria c : criteria) {
+                    System.out.println("[DEBUG Criteria]   - name='" + c.enchantmentName() + "', level=" + c.level());
+                }
+                
+                Predicate<MerchantOffer> predicate = offer -> {
+                    System.out.println("[DEBUG Predicate] Testing offer: " + offer.getResult().getHoverName().getString());
+                    boolean result = criteria.stream().anyMatch(c -> c.matches(offer));
+                    System.out.println("[DEBUG Predicate] Result: " + result);
+                    return result;
+                };
 
                 // Start cycling
                 proc.startCycling(predicate, autolock, humanMode);
@@ -700,10 +711,18 @@ public class TradeCommand extends Command {
                     normalized = enchant.value().description().getString().toLowerCase().replace(" ", "_");
                 }
 
+                // DEBUG: Log what we're comparing
+                boolean nameMatch = normalized.equals(enchantmentName) || normalized.equals(enchantmentName.replace("_", ""));
+                boolean levelMatch = level == null || level.intValue() == lvl;
+                System.out.println("[DEBUG TradeMatch] registeredName='" + registeredName + 
+                    "' -> normalized='" + normalized + "' | target='" + enchantmentName + ":" + level + 
+                    "' | bookLvl=" + lvl + " | nameMatch=" + nameMatch + ", levelMatch=" + levelMatch +
+                    " | WOULD_MATCH=" + (nameMatch && levelMatch));
+
                 if (normalized.equals(enchantmentName) ||
                         normalized.equals(enchantmentName.replace("_", ""))) {
                     // Name matches - check level if specified
-                    if (level == null || level == lvl) {
+                    if (level == null || level.intValue() == lvl) {
                         return true;
                     }
                 }
