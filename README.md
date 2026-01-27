@@ -21,7 +21,7 @@ This fork adds **Villager Trade Automation** - a system to automatically cycle l
 ```
 #trade setvil             - Select the villager you're looking at
 #trade setpos             - Select the workstation placement position you're looking at
-#trade cycle mending      - Cycle until Mending book is found (hold lectern in hand)
+#trade cycle mending      - Cycle until Mending book is found (lectern auto-selected from hotbar)
 #trade cycle mending -human  - Cycle with human-like randomized delays
 #trade stop               - Stop cycling
 #trade status             - Show cycle statistics
