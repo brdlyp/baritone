@@ -531,8 +531,10 @@ public class TradeCommand extends Command {
 
         if (args.has(2)) {
             String action = args.getString().toLowerCase();
-            if (action.equals("cycle") && args.hasExactlyOne()) {
-                String current = args.peekString();
+            if (action.equals("cycle") && args.hasAny()) {
+                // Use rawRest() to get the full remaining string, handling bracket notation with spaces
+                // e.g., "[sweeping_edge:1, sweep" gets split by arg parser but rawRest() gives us the full string
+                String current = args.rawRest();
                 return getEnchantmentCompletions(current);
             }
         }
@@ -580,10 +582,18 @@ public class TradeCommand extends Command {
         int lastComma = inner.lastIndexOf(',');
         String prefix;
         String beforeCurrent;
+        String spacingAfterComma = "";  // Preserve user's spacing (or lack thereof)
 
         if (lastComma >= 0) {
             beforeCurrent = inner.substring(0, lastComma + 1);
-            prefix = inner.substring(lastComma + 1).trim().toLowerCase();
+            String afterComma = inner.substring(lastComma + 1);
+            // Preserve whatever whitespace the user typed after the comma
+            int firstNonSpace = 0;
+            while (firstNonSpace < afterComma.length() && Character.isWhitespace(afterComma.charAt(firstNonSpace))) {
+                firstNonSpace++;
+            }
+            spacingAfterComma = afterComma.substring(0, firstNonSpace);
+            prefix = afterComma.substring(firstNonSpace).toLowerCase();
         } else {
             beforeCurrent = "";
             prefix = inner.trim().toLowerCase();
@@ -591,7 +601,7 @@ public class TradeCommand extends Command {
 
         // Get completions for the current enchantment
         return getSingleEnchantmentCompletions(prefix, "")
-                .map(completion -> openBracket + beforeCurrent + (lastComma >= 0 ? " " : "") + completion);
+                .map(completion -> openBracket + beforeCurrent + spacingAfterComma + completion);
     }
 
     /**
