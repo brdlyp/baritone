@@ -431,7 +431,7 @@ public class TradeCommand extends Command {
         return List.of(parseOneEnchantment(arg));
     }
 
-    private List<EnchantmentCriteria> parseEnchantmentList(String listStr) {
+    private List<EnchantmentCriteria> parseEnchantmentList(String listStr) throws CommandException {
         // Parse comma-separated enchantments: mending:1, protection:4, silk_touch
         List<EnchantmentCriteria> result = new ArrayList<>();
 
@@ -445,7 +445,7 @@ public class TradeCommand extends Command {
         return result;
     }
 
-    private EnchantmentCriteria parseOneEnchantment(String str) {
+    private EnchantmentCriteria parseOneEnchantment(String str) throws CommandException {
         // Parse resource location style: "mending" or "mending:1" or "protection:4"
         str = str.trim().toLowerCase();
 
@@ -471,8 +471,9 @@ public class TradeCommand extends Command {
 
         // Validate enchantment name
         if (!VALID_ENCHANTMENTS.contains(name)) {
-            // Log warning but still allow it (in case of new enchantments not in our list)
-            // The actual matching will use registry names anyway
+            throw new CommandInvalidStateException(
+                    "Unknown enchantment '" + name + "'. Use #trade presets to see valid enchantment names."
+            );
         }
 
         return new EnchantmentCriteria(name, level);
@@ -523,16 +524,96 @@ public class TradeCommand extends Command {
         if (args.has(2)) {
             String action = args.getString().toLowerCase();
             if (action.equals("cycle") && args.hasExactlyOne()) {
-                // Tab complete enchantment names and presets
-                String prefix = args.peekString().toLowerCase();
-                Stream<String> presetStream = PRESETS.keySet().stream();
-                Stream<String> enchantStream = VALID_ENCHANTMENTS.stream();
-                return Stream.concat(presetStream, enchantStream)
-                        .filter(s -> s.startsWith(prefix));
+                String current = args.peekString();
+                return getEnchantmentCompletions(current);
             }
         }
 
         return Stream.empty();
+    }
+
+    /**
+     * Get tab completions for enchantment input, supporting:
+     * - Simple enchantment names: "mend" -> "mending"
+     * - Array format: "[mending," -> "[mending,protection", "[mending,prot" -> "[mending,protection"
+     * - Enchantments with levels: "protection:" -> "protection:1", "protection:2", etc.
+     */
+    private Stream<String> getEnchantmentCompletions(String current) {
+        String lower = current.toLowerCase();
+
+        // Check if we're inside bracket notation [...]
+        if (lower.startsWith("[")) {
+            return getArrayCompletions(current, "[", "]");
+        }
+
+        // Check if we're inside enchantments={...} notation
+        if (lower.startsWith("enchantments={")) {
+            return getArrayCompletions(current, "enchantments={", "}");
+        }
+
+        // Simple single enchantment or preset completion
+        return getSingleEnchantmentCompletions(lower, "");
+    }
+
+    /**
+     * Handle completions inside array notation like [...] or enchantments={...}
+     */
+    private Stream<String> getArrayCompletions(String current, String openBracket, String closeBracket) {
+        String inner;
+        boolean isClosed = current.endsWith(closeBracket);
+
+        if (isClosed) {
+            inner = current.substring(openBracket.length(), current.length() - closeBracket.length());
+        } else {
+            inner = current.substring(openBracket.length());
+        }
+
+        // Find the last comma to get the current enchantment being typed
+        int lastComma = inner.lastIndexOf(',');
+        String prefix;
+        String beforeCurrent;
+
+        if (lastComma >= 0) {
+            beforeCurrent = inner.substring(0, lastComma + 1);
+            prefix = inner.substring(lastComma + 1).trim().toLowerCase();
+        } else {
+            beforeCurrent = "";
+            prefix = inner.trim().toLowerCase();
+        }
+
+        // Get completions for the current enchantment
+        return getSingleEnchantmentCompletions(prefix, "")
+                .map(completion -> openBracket + beforeCurrent + (lastComma >= 0 ? " " : "") + completion);
+    }
+
+    /**
+     * Get completions for a single enchantment name, with optional level suggestions.
+     */
+    private Stream<String> getSingleEnchantmentCompletions(String prefix, String wrapperPrefix) {
+        // Check if we're completing a level (e.g., "protection:" or "protection:3")
+        if (prefix.contains(":")) {
+            String[] parts = prefix.split(":", 2);
+            String enchantName = parts[0];
+
+            // Verify the enchantment name is valid
+            if (VALID_ENCHANTMENTS.contains(enchantName)) {
+                String levelPrefix = parts.length > 1 ? parts[1] : "";
+                // Suggest levels 1-5 for most enchantments
+                return Stream.of("1", "2", "3", "4", "5")
+                        .filter(lvl -> lvl.startsWith(levelPrefix))
+                        .map(lvl -> wrapperPrefix + enchantName + ":" + lvl);
+            }
+        }
+
+        // Complete enchantment names and presets
+        Stream<String> presetStream = PRESETS.keySet().stream()
+                .filter(s -> s.startsWith(prefix))
+                .map(s -> wrapperPrefix + s);
+        Stream<String> enchantStream = VALID_ENCHANTMENTS.stream()
+                .filter(s -> s.startsWith(prefix))
+                .map(s -> wrapperPrefix + s);
+
+        return Stream.concat(presetStream, enchantStream);
     }
 
     @Override
