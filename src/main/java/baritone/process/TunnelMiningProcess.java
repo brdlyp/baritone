@@ -149,17 +149,31 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
             return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
         }
 
-        // Try to mine blocks at current position if we're close enough
         baritone.getInputOverrideHandler().clearAllKeys();
 
-        // IMPROVEMENT: Find reachable blocks, prioritizing those that follow the pattern order
-        // This prevents unnecessary movement while still respecting the mining pattern
+        // Find a reachable block following the pattern
         if (isSafeToCancel && ctx.player().onGround()) {
             Optional<BlockPos> reachableBlock = findReachableBlockFollowingPattern();
             if (reachableBlock.isPresent()) {
                 BlockPos breakPos = reachableBlock.get();
                 Optional<Rotation> rot = RotationUtils.reachable(ctx, breakPos, ctx.playerController().getBlockReachDistance());
                 if (rot.isPresent()) {
+                    // HUMAN-LIKE BEHAVIOR: Check if we should move closer to the mining face
+                    // Humans don't stand at max reach - they walk right up to blocks
+                    Optional<BlockPos> closerPosition = findCloserMiningPosition(breakPos);
+                    if (closerPosition.isPresent()) {
+                        // There's cleared space closer to the block - walk into it while mining
+                        Goal walkCloser = new GoalBlock(closerPosition.get());
+                        baritone.getLookBehavior().updateTarget(rot.get(), true);
+                        MovementHelper.switchToBestToolFor(ctx, ctx.world().getBlockState(breakPos));
+                        if (ctx.isLookingAt(breakPos) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
+                            baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
+                        }
+                        // Walk closer while mining - this creates the natural "walking forward" behavior
+                        return new PathingCommand(walkCloser, PathingCommandType.SET_GOAL_AND_PATH);
+                    }
+                    
+                    // Already close enough - just mine
                     baritone.getLookBehavior().updateTarget(rot.get(), true);
                     MovementHelper.switchToBestToolFor(ctx, ctx.world().getBlockState(breakPos));
                     if (ctx.isLookingAt(breakPos) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
@@ -171,12 +185,110 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
         }
 
         // Need to move closer - find the best target position
-        // IMPROVEMENT: Use pattern order but allow skipping to nearby positions to avoid long walks
         BlockPos targetPos = findNextMiningTarget();
 
-        // Find a good goal position - we want to be adjacent to or near the target
+        // Find a good goal position - walk right up to the blocks, not just within reach
         Goal goal = createMiningGoal(targetPos);
         return new PathingCommand(goal, PathingCommandType.SET_GOAL_AND_PATH);
+    }
+
+    /**
+     * Check if there's a cleared position closer to the target block that we should walk to.
+     * This creates the human-like behavior of walking right up to blocks instead of
+     * standing at max reach distance.
+     * 
+     * @param targetBlock The block we're trying to mine
+     * @return A closer position to walk to, or empty if we're already close enough
+     */
+    private Optional<BlockPos> findCloserMiningPosition(BlockPos targetBlock) {
+        BlockPos playerPos = ctx.playerFeet();
+        
+        // Calculate horizontal distance to the target block
+        double currentDistSq = Math.pow(playerPos.getX() - targetBlock.getX(), 2) + 
+                               Math.pow(playerPos.getZ() - targetBlock.getZ(), 2);
+        
+        // If already adjacent (within ~1.5 blocks horizontally), no need to move closer
+        if (currentDistSq <= 2.25) { // 1.5^2
+            return Optional.empty();
+        }
+        
+        // Find the best position that's:
+        // 1. Cleared (can stand there)
+        // 2. Closer to the target than we currently are
+        // 3. Still inside or adjacent to the mining area
+        BlockPos bestPos = null;
+        double bestDistToTarget = currentDistSq;
+        
+        // Check positions between player and target
+        int dx = Integer.compare(targetBlock.getX(), playerPos.getX());
+        int dz = Integer.compare(targetBlock.getZ(), playerPos.getZ());
+        
+        // Try positions stepping toward the target
+        for (int step = 1; step <= 3; step++) {
+            // Try direct path
+            BlockPos candidate = playerPos.offset(dx * step, 0, dz * step);
+            if (isGoodCloserPosition(candidate, targetBlock, bestDistToTarget)) {
+                double distToTarget = candidate.distSqr(targetBlock);
+                if (distToTarget < bestDistToTarget) {
+                    bestDistToTarget = distToTarget;
+                    bestPos = candidate;
+                }
+            }
+            
+            // Also try cardinal directions if diagonal isn't clear
+            if (dx != 0) {
+                candidate = playerPos.offset(dx * step, 0, 0);
+                if (isGoodCloserPosition(candidate, targetBlock, currentDistSq)) {
+                    double distToTarget = candidate.distSqr(targetBlock);
+                    if (distToTarget < bestDistToTarget) {
+                        bestDistToTarget = distToTarget;
+                        bestPos = candidate;
+                    }
+                }
+            }
+            if (dz != 0) {
+                candidate = playerPos.offset(0, 0, dz * step);
+                if (isGoodCloserPosition(candidate, targetBlock, currentDistSq)) {
+                    double distToTarget = candidate.distSqr(targetBlock);
+                    if (distToTarget < bestDistToTarget) {
+                        bestDistToTarget = distToTarget;
+                        bestPos = candidate;
+                    }
+                }
+            }
+        }
+        
+        return Optional.ofNullable(bestPos);
+    }
+    
+    /**
+     * Check if a position is a good candidate for moving closer to mine.
+     */
+    private boolean isGoodCloserPosition(BlockPos pos, BlockPos targetBlock, double currentDistSq) {
+        // Must be cleared (can stand there)
+        if (!isPositionClear(pos)) {
+            return false;
+        }
+        
+        // Must be closer to target than current position
+        double distToTarget = pos.distSqr(targetBlock);
+        if (distToTarget >= currentDistSq) {
+            return false;
+        }
+        
+        // Don't walk into the target block itself
+        if (pos.getX() == targetBlock.getX() && pos.getZ() == targetBlock.getZ()) {
+            return false;
+        }
+        
+        // Must have solid ground below (don't walk into pits)
+        BlockPos below = pos.below();
+        BlockState belowState = ctx.world().getBlockState(below);
+        if (isAirOrLiquid(belowState)) {
+            return false;
+        }
+        
+        return true;
     }
 
     /**
@@ -310,27 +422,38 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
 
     /**
      * Create a goal to get to a position for mining.
-     * Uses multiple strategies to find reachable positions when direct access is blocked.
-     * Prioritizes positions that allow mining multiple blocks to reduce movement.
+     * HUMAN-LIKE BEHAVIOR: Prefers standing directly adjacent to unmined blocks,
+     * not at max reach distance. This creates natural "walk up to the wall" behavior.
      */
     private Goal createMiningGoal(BlockPos targetPos) {
         List<BlockPos> candidatePositions = new ArrayList<>();
-        double reachDistance = ctx.playerController().getBlockReachDistance();
+        BlockPos playerPos = ctx.playerFeet();
 
-        // Strategy 1: Try adjacent positions outside or cleared inside the mining area
+        // Strategy 1: Find positions DIRECTLY ADJACENT to the target (1 block away)
+        // Prefer positions that are inside the cleared mining area (walking into the tunnel)
+        List<BlockPos> adjacentInside = new ArrayList<>();
+        List<BlockPos> adjacentOutside = new ArrayList<>();
+        
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
                 if (dx == 0 && dz == 0) continue;
                 BlockPos adjacentPos = targetPos.offset(dx, 0, dz);
-                // Make sure adjacent position is either outside the mining area or already cleared
-                if (!isInsideMiningArea(adjacentPos) || isPositionClear(adjacentPos)) {
-                    candidatePositions.add(adjacentPos);
+                
+                if (isPositionClear(adjacentPos)) {
+                    if (isInsideMiningArea(adjacentPos)) {
+                        adjacentInside.add(adjacentPos);
+                    } else {
+                        adjacentOutside.add(adjacentPos);
+                    }
                 }
             }
         }
+        
+        // Prefer inside positions (walk into the tunnel), then outside positions
+        candidatePositions.addAll(adjacentInside);
+        candidatePositions.addAll(adjacentOutside);
 
-        // Strategy 2: If no good adjacent positions, try positions BELOW the target
-        // This handles cases where blocks above the mining area obstruct access from above
+        // Strategy 2: If no adjacent positions, try positions BELOW the target
         if (candidatePositions.isEmpty()) {
             for (int dy = -1; dy >= -3; dy--) {
                 BlockPos belowPos = targetPos.offset(0, dy, 0);
@@ -340,70 +463,33 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
             }
         }
 
-        // Strategy 3: Try positions at the edges of the mining area that are already cleared
-        // This helps when the player needs to enter the mining area from outside
+        // Strategy 3: Try cleared edge positions as last resort
         if (candidatePositions.isEmpty()) {
             candidatePositions.addAll(findClearedEdgePositions(targetPos, 5));
         }
 
-        // Strategy 4: Last resort - use GoalNear with larger radius
+        // Strategy 4: Last resort - use GoalNear
         if (candidatePositions.isEmpty()) {
-            return new GoalNear(targetPos, 5);
+            return new GoalNear(targetPos, 2); // Reduced from 5 to 2 - get closer!
         }
 
-        // IMPROVEMENT: Score positions by how many unmined blocks they can reach
-        // This reduces the need for constant small movements
-        BlockPos playerPos = ctx.playerFeet();
+        // Sort candidates: prefer positions that are
+        // 1. Directly in line with the mining direction (not at corners)
+        // 2. Closer to the player (less walking)
         candidatePositions.sort((a, b) -> {
-            int scoreA = countReachableUnminedBlocks(a, reachDistance);
-            int scoreB = countReachableUnminedBlocks(b, reachDistance);
+            // Prefer cardinal directions over diagonals (more natural movement)
+            boolean aCardinal = (a.getX() == targetPos.getX()) || (a.getZ() == targetPos.getZ());
+            boolean bCardinal = (b.getX() == targetPos.getX()) || (b.getZ() == targetPos.getZ());
+            if (aCardinal && !bCardinal) return -1;
+            if (bCardinal && !aCardinal) return 1;
             
-            // First priority: more reachable blocks is better
-            if (scoreA != scoreB) {
-                return Integer.compare(scoreB, scoreA); // Higher score first
-            }
-            
-            // Second priority: closer to player is better (less walking)
+            // Then prefer closer to player
             double distA = playerPos.distSqr(a);
             double distB = playerPos.distSqr(b);
             return Double.compare(distA, distB);
         });
 
-        // Return the best position (most reachable blocks, closest)
-        // Use GoalBlock for the best choice to ensure we go exactly there
         return new GoalBlock(candidatePositions.get(0));
-    }
-
-    /**
-     * Count how many unmined blocks in the mining area could be reached from a given position.
-     * Used to prioritize standing positions that allow mining more blocks without moving.
-     */
-    private int countReachableUnminedBlocks(BlockPos standPos, double reachDistance) {
-        int count = 0;
-        int reach = (int) Math.ceil(reachDistance);
-        
-        for (int dx = -reach; dx <= reach; dx++) {
-            for (int dy = -1; dy <= reach; dy++) {
-                for (int dz = -reach; dz <= reach; dz++) {
-                    BlockPos checkPos = standPos.offset(dx, dy, dz);
-                    
-                    // Must be inside mining area
-                    if (!isInsideMiningArea(checkPos)) continue;
-                    
-                    // Must need mining
-                    BlockState state = ctx.world().getBlockState(checkPos);
-                    if (isAirOrLiquid(state)) continue;
-                    
-                    // Check if within reach distance (approximate - actual reach check is more complex)
-                    double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                    if (dist <= reachDistance) {
-                        count++;
-                    }
-                }
-            }
-        }
-        
-        return count;
     }
 
     /**
