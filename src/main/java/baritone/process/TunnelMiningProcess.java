@@ -195,13 +195,12 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
 
     /**
      * Create a goal to get to a position for mining.
+     * Uses multiple strategies to find reachable positions when direct access is blocked.
      */
     private Goal createMiningGoal(BlockPos targetPos) {
-        // Create a goal to get near the target position
-        // We want to be able to reach the blocks, so aim for adjacent positions
         List<Goal> goals = new ArrayList<>();
 
-        // Add goals for positions adjacent to the target
+        // Strategy 1: Try adjacent positions outside or cleared inside the mining area
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
                 if (dx == 0 && dz == 0) continue;
@@ -213,9 +212,29 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
             }
         }
 
-        // If no good adjacent positions, just get near
+        // Strategy 2: If no good adjacent positions, try positions BELOW the target
+        // This handles cases where blocks above the mining area obstruct access from above
         if (goals.isEmpty()) {
-            return new GoalNear(targetPos, 3);
+            for (int dy = -1; dy >= -3; dy--) {
+                BlockPos belowPos = targetPos.offset(0, dy, 0);
+                if (isInsideMiningArea(belowPos) && isPositionClear(belowPos)) {
+                    goals.add(new GoalBlock(belowPos));
+                }
+            }
+        }
+
+        // Strategy 3: Try positions at the edges of the mining area that are already cleared
+        // This helps when the player needs to enter the mining area from outside
+        if (goals.isEmpty()) {
+            List<BlockPos> edgePositions = findClearedEdgePositions(targetPos, 5);
+            for (BlockPos edgePos : edgePositions) {
+                goals.add(new GoalBlock(edgePos));
+            }
+        }
+
+        // Strategy 4: Last resort - use GoalNear with larger radius
+        if (goals.isEmpty()) {
+            return new GoalNear(targetPos, 5);
         }
 
         return new GoalComposite(goals.toArray(new Goal[0]));
@@ -238,6 +257,90 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
         BlockState feet = ctx.world().getBlockState(pos);
         BlockState head = ctx.world().getBlockState(pos.above());
         return isAirOrLiquid(feet) && isAirOrLiquid(head);
+    }
+
+    /**
+     * Find cleared positions at the edges of the mining area that are relatively close to the target.
+     * These positions can be used as entry points when the target is unreachable from outside.
+     */
+    private List<BlockPos> findClearedEdgePositions(BlockPos targetPos, int maxDistance) {
+        List<BlockPos> edgePositions = new ArrayList<>();
+        
+        // Check positions at the boundaries of the mining area
+        int minX = corner1.getX();
+        int maxX = corner2.getX();
+        int minY = corner1.getY();
+        int maxY = corner2.getY();
+        int minZ = corner1.getZ();
+        int maxZ = corner2.getZ();
+        
+        // Helper to check and add edge positions
+        List<BlockPos> candidates = new ArrayList<>();
+        
+        // Add positions along the X edges
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                candidates.add(new BlockPos(x, y, minZ)); // Front edge
+                candidates.add(new BlockPos(x, y, maxZ)); // Back edge
+            }
+        }
+        
+        // Add positions along the Z edges
+        for (int z = minZ; z <= maxZ; z++) {
+            for (int y = minY; y <= maxY; y++) {
+                candidates.add(new BlockPos(minX, y, z)); // Left edge
+                candidates.add(new BlockPos(maxX, y, z)); // Right edge
+            }
+        }
+        
+        // Filter candidates: must be clear and within distance threshold
+        for (BlockPos candidate : candidates) {
+            if (isPositionClear(candidate)) {
+                double distSq = candidate.distSqr(targetPos);
+                if (distSq <= maxDistance * maxDistance) {
+                    edgePositions.add(candidate);
+                }
+            }
+        }
+        
+        // Sort by distance to target
+        edgePositions.sort(Comparator.comparingDouble(targetPos::distSqr));
+        
+        // Return top 5 closest edge positions
+        return edgePositions.subList(0, Math.min(5, edgePositions.size()));
+    }
+
+    /**
+     * Check if a position is accessible from cleared areas.
+     * A position is considered accessible if it's clear and has at least one adjacent clear position,
+     * indicating it's part of a connected cleared area rather than an isolated air pocket.
+     */
+    private boolean isAccessibleFromClearedAreas(BlockPos pos) {
+        // If the position itself isn't clear, it's not accessible
+        if (!isPositionClear(pos)) {
+            return false;
+        }
+        
+        // Check if at least one adjacent position is also clear
+        // This indicates the position is part of a connected cleared area
+        BlockPos[] adjacent = {
+            pos.north(),
+            pos.south(),
+            pos.east(),
+            pos.west(),
+            pos.below(),
+            pos.above()
+        };
+        
+        for (BlockPos adj : adjacent) {
+            if (isPositionClear(adj)) {
+                return true;
+            }
+        }
+        
+        // If no adjacent positions are clear, this might be an isolated air pocket
+        // Still return true if the position is outside the mining area (external access)
+        return !isInsideMiningArea(pos);
     }
 
     /**
