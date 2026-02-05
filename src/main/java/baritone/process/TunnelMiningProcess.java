@@ -133,15 +133,31 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
             return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
         }
 
+        // Skip positions that are already air
+        while (currentPositionIndex < orderedMiningPositions.size()) {
+            BlockPos targetPos = orderedMiningPositions.get(currentPositionIndex);
+            if (needsMining(targetPos)) {
+                break;
+            }
+            currentPositionIndex++;
+        }
+
+        // Check if we're done
+        if (currentPositionIndex >= orderedMiningPositions.size()) {
+            logDirect("Tunnel mining complete!");
+            cancel();
+            return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
+        }
+
         // Try to mine blocks at current position if we're close enough
         baritone.getInputOverrideHandler().clearAllKeys();
 
-        // IMPROVEMENT: First, try to mine ANY reachable block from current position
-        // This prevents unnecessary movement when blocks are within reach
+        // IMPROVEMENT: Find reachable blocks, prioritizing those that follow the pattern order
+        // This prevents unnecessary movement while still respecting the mining pattern
         if (isSafeToCancel && ctx.player().onGround()) {
-            Optional<BlockPos> anyReachableBlock = findAnyReachableUnminedBlock();
-            if (anyReachableBlock.isPresent()) {
-                BlockPos breakPos = anyReachableBlock.get();
+            Optional<BlockPos> reachableBlock = findReachableBlockFollowingPattern();
+            if (reachableBlock.isPresent()) {
+                BlockPos breakPos = reachableBlock.get();
                 Optional<Rotation> rot = RotationUtils.reachable(ctx, breakPos, ctx.playerController().getBlockReachDistance());
                 if (rot.isPresent()) {
                     baritone.getLookBehavior().updateTarget(rot.get(), true);
@@ -154,124 +170,100 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
             }
         }
 
-        // Update position index - skip already mined positions
-        while (currentPositionIndex < orderedMiningPositions.size()) {
-            BlockPos targetPos = orderedMiningPositions.get(currentPositionIndex);
-            if (needsMining(targetPos)) {
-                break;
-            }
-            currentPositionIndex++;
-        }
+        // Need to move closer - find the best target position
+        // IMPROVEMENT: Use pattern order but allow skipping to nearby positions to avoid long walks
+        BlockPos targetPos = findNextMiningTarget();
 
-        // Check if we're done
-        if (currentPositionIndex >= orderedMiningPositions.size()) {
-            // Double-check: scan entire area for any remaining blocks
-            Optional<BlockPos> remaining = findNearestUnminedBlock();
-            if (remaining.isEmpty()) {
-                logDirect("Tunnel mining complete!");
-                cancel();
-                return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
-            }
-        }
-
-        // IMPROVEMENT: Find the nearest unmined block instead of strictly following the order
-        // This prevents the "walking the whole zigzag" problem
-        Optional<BlockPos> nearestUnmined = findNearestUnminedBlock();
-        if (nearestUnmined.isEmpty()) {
-            logDirect("Tunnel mining complete!");
-            cancel();
-            return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
-        }
-
-        BlockPos targetPos = nearestUnmined.get();
-
-        // Need to move closer to the target position
         // Find a good goal position - we want to be adjacent to or near the target
         Goal goal = createMiningGoal(targetPos);
         return new PathingCommand(goal, PathingCommandType.SET_GOAL_AND_PATH);
     }
 
     /**
-     * Find ANY unmined block within the mining area that can be reached from the current position.
-     * Prioritizes blocks that are closest to the player's line of sight / current facing direction.
-     * This prevents unnecessary movement when multiple blocks are within reach.
+     * Find a reachable block that follows the mining pattern order.
+     * Looks ahead in the pattern to find blocks we can mine without moving,
+     * prioritizing earlier positions in the pattern order.
+     * This prevents unnecessary movement while still respecting the mining pattern.
      */
-    private Optional<BlockPos> findAnyReachableUnminedBlock() {
-        BlockPos playerPos = ctx.playerFeet();
+    private Optional<BlockPos> findReachableBlockFollowingPattern() {
         double reachDistance = ctx.playerController().getBlockReachDistance();
-        List<BlockPos> reachableBlocks = new ArrayList<>();
+        List<BlockPos> reachableInPattern = new ArrayList<>();
 
-        // Check all positions in reach range
-        int reach = (int) Math.ceil(reachDistance);
-        for (int dx = -reach; dx <= reach; dx++) {
-            for (int dy = -1; dy <= reach; dy++) { // Can mine slightly below feet level too
-                for (int dz = -reach; dz <= reach; dz++) {
-                    BlockPos checkPos = playerPos.offset(dx, dy, dz);
-                    
-                    // Must be inside mining area
-                    if (!isInsideMiningArea(checkPos)) continue;
-                    
-                    // Must need mining
-                    BlockState state = ctx.world().getBlockState(checkPos);
-                    if (isAirOrLiquid(state)) continue;
-                    
-                    // Must be reachable
+        // Look through upcoming positions in pattern order
+        // Check a reasonable window ahead (not the entire list for performance)
+        int lookAhead = Math.min(100, orderedMiningPositions.size() - currentPositionIndex);
+        
+        for (int i = 0; i < lookAhead; i++) {
+            int idx = currentPositionIndex + i;
+            if (idx >= orderedMiningPositions.size()) break;
+            
+            BlockPos patternPos = orderedMiningPositions.get(idx);
+            
+            // Check all blocks in the column at this position (up to layerHeight)
+            for (int dy = 0; dy < layerHeight && patternPos.getY() + dy <= corner2.getY(); dy++) {
+                BlockPos checkPos = patternPos.above(dy);
+                BlockState state = ctx.world().getBlockState(checkPos);
+                
+                if (!isAirOrLiquid(state)) {
                     Optional<Rotation> rot = RotationUtils.reachable(ctx, checkPos, reachDistance);
                     if (rot.isPresent()) {
-                        reachableBlocks.add(checkPos);
+                        reachableInPattern.add(checkPos);
                     }
                 }
             }
         }
 
-        if (reachableBlocks.isEmpty()) {
+        if (reachableInPattern.isEmpty()) {
             return Optional.empty();
         }
 
-        // Prioritize: mine from top to bottom for stability, closest horizontally
-        reachableBlocks.sort((a, b) -> {
-            // First priority: higher blocks first (prevents falling blocks)
-            int yCompare = Integer.compare(b.getY(), a.getY());
-            if (yCompare != 0) return yCompare;
-            
-            // Second priority: closest horizontal distance
-            double distA = Math.sqrt(Math.pow(a.getX() - playerPos.getX(), 2) + Math.pow(a.getZ() - playerPos.getZ(), 2));
-            double distB = Math.sqrt(Math.pow(b.getX() - playerPos.getX(), 2) + Math.pow(b.getZ() - playerPos.getZ(), 2));
-            return Double.compare(distA, distB);
-        });
-
-        return Optional.of(reachableBlocks.get(0));
+        // Sort by Y (higher first for stability), then by pattern order implicitly (already ordered)
+        reachableInPattern.sort((a, b) -> Integer.compare(b.getY(), a.getY()));
+        
+        return Optional.of(reachableInPattern.get(0));
     }
 
     /**
-     * Find the nearest unmined block in the mining area.
-     * Used when we need to move to a new location - picks the closest target
-     * rather than strictly following the pre-generated pattern order.
+     * Find the next mining target position.
+     * Follows the pattern order but allows skipping ahead if the next position
+     * is very far and there are much closer unmined positions.
+     * This prevents the "walking the whole zigzag" problem while maintaining pattern structure.
      */
-    private Optional<BlockPos> findNearestUnminedBlock() {
+    private BlockPos findNextMiningTarget() {
         BlockPos playerPos = ctx.playerFeet();
-        BlockPos nearest = null;
-        double nearestDistSq = Double.MAX_VALUE;
-
-        // Scan the mining area for unmined blocks
-        for (int x = corner1.getX(); x <= corner2.getX(); x++) {
-            for (int y = corner1.getY(); y <= corner2.getY(); y++) {
-                for (int z = corner1.getZ(); z <= corner2.getZ(); z++) {
-                    BlockPos pos = new BlockPos(x, y, z);
-                    BlockState state = ctx.world().getBlockState(pos);
-                    
-                    if (!isAirOrLiquid(state)) {
-                        double distSq = playerPos.distSqr(pos);
-                        if (distSq < nearestDistSq) {
-                            nearestDistSq = distSq;
-                            nearest = pos;
-                        }
-                    }
-                }
+        BlockPos patternTarget = orderedMiningPositions.get(currentPositionIndex);
+        double patternDistSq = playerPos.distSqr(patternTarget);
+        
+        // If the pattern target is reasonably close (within 6 blocks), just go there
+        if (patternDistSq <= 36) { // 6^2 = 36
+            return patternTarget;
+        }
+        
+        // Pattern target is far - look for closer unmined positions in the pattern
+        // But only consider positions that are "ahead" in the pattern (not going backwards)
+        BlockPos bestTarget = patternTarget;
+        double bestDistSq = patternDistSq;
+        
+        // Look ahead in the pattern for closer positions
+        int lookAhead = Math.min(50, orderedMiningPositions.size() - currentPositionIndex);
+        for (int i = 1; i < lookAhead; i++) {
+            int idx = currentPositionIndex + i;
+            if (idx >= orderedMiningPositions.size()) break;
+            
+            BlockPos candidate = orderedMiningPositions.get(idx);
+            if (!needsMining(candidate)) continue;
+            
+            double candidateDistSq = playerPos.distSqr(candidate);
+            
+            // Prefer this candidate if it's significantly closer (at least 3 blocks closer)
+            // This prevents constant switching but allows skipping very far positions
+            if (candidateDistSq < bestDistSq - 9) { // 3^2 = 9
+                bestTarget = candidate;
+                bestDistSq = candidateDistSq;
             }
         }
-
-        return Optional.ofNullable(nearest);
+        
+        return bestTarget;
     }
 
     /**
