@@ -198,7 +198,7 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
      */
     private Optional<BlockPos> findAnyReachableUnminedBlock() {
         BlockPos playerPos = ctx.playerFeet();
-        float reachDistance = ctx.playerController().getBlockReachDistance();
+        double reachDistance = ctx.playerController().getBlockReachDistance();
         List<BlockPos> reachableBlocks = new ArrayList<>();
 
         // Check all positions in reach range
@@ -323,7 +323,7 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
      */
     private Goal createMiningGoal(BlockPos targetPos) {
         List<BlockPos> candidatePositions = new ArrayList<>();
-        float reachDistance = ctx.playerController().getBlockReachDistance();
+        double reachDistance = ctx.playerController().getBlockReachDistance();
 
         // Strategy 1: Try adjacent positions outside or cleared inside the mining area
         for (int dx = -1; dx <= 1; dx++) {
@@ -386,7 +386,7 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
      * Count how many unmined blocks in the mining area could be reached from a given position.
      * Used to prioritize standing positions that allow mining more blocks without moving.
      */
-    private int countReachableUnminedBlocks(BlockPos standPos, float reachDistance) {
+    private int countReachableUnminedBlocks(BlockPos standPos, double reachDistance) {
         int count = 0;
         int reach = (int) Math.ceil(reachDistance);
         
