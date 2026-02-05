@@ -324,20 +324,25 @@ public class TunnelCommand extends Command {
 
     @Override
     public Stream<String> tabComplete(String label, IArgConsumer args) {
-        if (args.hasExactlyOne()) {
-            return Stream.of("set", "start", "clear", "status")
-                    .filter(s -> s.startsWith(args.peekString().toLowerCase(Locale.US)));
-        }
-        if (args.hasExactly(2)) {
-            String firstArg = args.getString().toLowerCase(Locale.US);
-            if ("set".equals(firstArg)) {
-                return Stream.of("start", "end")
+        try {
+            if (args.hasExactlyOne()) {
+                return Stream.of("set", "start", "clear", "status")
                         .filter(s -> s.startsWith(args.peekString().toLowerCase(Locale.US)));
             }
-            if ("start".equals(firstArg)) {
-                return Stream.of("mining")
-                        .filter(s -> s.startsWith(args.peekString().toLowerCase(Locale.US)));
+            if (args.hasExactly(2)) {
+                String firstArg = args.getString().toLowerCase(Locale.US);
+                if ("set".equals(firstArg)) {
+                    return Stream.of("start", "end")
+                            .filter(s -> s.startsWith(args.peekString().toLowerCase(Locale.US)));
+                }
+                if ("start".equals(firstArg)) {
+                    return Stream.of("mining")
+                            .filter(s -> s.startsWith(args.peekString().toLowerCase(Locale.US)));
+                }
             }
+        } catch (Exception e) {
+            // If we can't peek/get arguments, just return no completions
+            return Stream.empty();
         }
         return Stream.empty();
     }
