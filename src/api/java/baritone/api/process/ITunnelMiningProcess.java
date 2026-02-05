@@ -21,17 +21,33 @@ import net.minecraft.core.BlockPos;
 
 /**
  * Interface for the tunnel mining process, which clears an area
- * using a methodical spiral pattern from top to bottom.
+ * using a configurable mining pattern from top to bottom.
  */
 public interface ITunnelMiningProcess extends IBaritoneProcess {
 
     /**
-     * Set the area to mine.
+     * Set the area to mine using the default pattern (SPIRAL_INWARDS).
      *
      * @param corner1 One corner of the area
      * @param corner2 The opposite corner of the area
      */
     void setArea(BlockPos corner1, BlockPos corner2);
+
+    /**
+     * Set the area to mine with a specific pattern.
+     *
+     * @param corner1 One corner of the area
+     * @param corner2 The opposite corner of the area
+     * @param pattern The mining pattern to use
+     */
+    void setArea(BlockPos corner1, BlockPos corner2, MiningPattern pattern);
+
+    /**
+     * Get the current mining pattern being used.
+     *
+     * @return The current pattern, or null if not active
+     */
+    MiningPattern getCurrentPattern();
 
     /**
      * Cancel the mining process.

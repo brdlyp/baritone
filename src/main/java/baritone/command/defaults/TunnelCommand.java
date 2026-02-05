@@ -26,6 +26,7 @@ import baritone.api.command.exception.CommandException;
 import baritone.api.command.exception.CommandInvalidStateException;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalStrictDirection;
+import baritone.api.process.MiningPattern;
 import baritone.api.utils.SettingsUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -83,15 +84,27 @@ public class TunnelCommand extends Command {
                 return;
             }
 
-            // Handle "start" subcommand (for "start mining")
+            // Handle "start" subcommand (for "start mining [pattern]")
             if ("start".equals(firstArg)) {
                 args.getString(); // consume "start"
                 if (args.hasAny() && "mining".equals(args.peekString().toLowerCase(Locale.US))) {
                     args.getString(); // consume "mining"
-                    handleStartMining(settings);
+                    // Check for optional pattern argument
+                    MiningPattern pattern = MiningPattern.SPIRAL_INWARDS; // default
+                    if (args.hasAny()) {
+                        String patternStr = args.getString();
+                        MiningPattern parsedPattern = MiningPattern.fromString(patternStr);
+                        if (parsedPattern == null) {
+                            throw new CommandInvalidStateException(
+                                "Unknown pattern: " + patternStr + 
+                                ". Available patterns: spiral_inwards, spiral_outwards, zigzag");
+                        }
+                        pattern = parsedPattern;
+                    }
+                    handleStartMining(settings, pattern);
                     return;
                 } else {
-                    throw new CommandInvalidStateException("Usage: tunnel start mining");
+                    throw new CommandInvalidStateException("Usage: tunnel start mining [pattern]");
                 }
             }
 
@@ -177,7 +190,7 @@ public class TunnelCommand extends Command {
     /**
      * Handle the "start mining" command.
      */
-    private void handleStartMining(Settings settings) throws CommandException {
+    private void handleStartMining(Settings settings, MiningPattern pattern) throws CommandException {
         Vec3i startPos = settings.tunnelStartPos.value;
         Vec3i endPos = settings.tunnelEndPos.value;
 
@@ -205,10 +218,10 @@ public class TunnelCommand extends Command {
         logDirect(String.format("Starting tunnel mining: %d x %d x %d blocks (%d total blocks)", 
                 width, height, depth, width * height * depth));
 
-        // Use the TunnelMiningProcess for methodical spiral mining pattern
-        baritone.getTunnelMiningProcess().setArea(corner1, corner2);
+        // Use the TunnelMiningProcess with the specified pattern
+        baritone.getTunnelMiningProcess().setArea(corner1, corner2, pattern);
         
-        logDirect("Mining started with spiral pattern from top to bottom...");
+        logDirect(String.format("Mining started with %s pattern from top to bottom...", pattern.getDisplayName()));
     }
 
     /**
@@ -342,6 +355,15 @@ public class TunnelCommand extends Command {
                             .filter(s -> s.startsWith(partial));
                 }
             }
+            if (args.hasExactly(3)) {
+                String firstArg = args.getString().toLowerCase(Locale.US);
+                String secondArg = args.getString().toLowerCase(Locale.US);
+                String partial = args.peekString().toLowerCase(Locale.US);
+                if ("start".equals(firstArg) && "mining".equals(secondArg)) {
+                    return Stream.of("spiral_inwards", "spiral_outwards", "zigzag")
+                            .filter(s -> s.startsWith(partial));
+                }
+            }
         } catch (Exception e) {
             // If we can't peek/get arguments, just return no completions
             return Stream.empty();
@@ -366,9 +388,16 @@ public class TunnelCommand extends Command {
                 "2. AREA SELECTION (new feature):",
                 "   > tunnel set start - Set the first corner by looking at a block",
                 "   > tunnel set end - Set the second corner by looking at a block",
-                "   > tunnel start mining - Begin mining the selected area",
+                "   > tunnel start mining [pattern] - Begin mining with optional pattern",
                 "   > tunnel clear - Clear the selection and stop mining",
                 "   > tunnel status - Show current selection status",
+                "",
+                "MINING PATTERNS:",
+                "   > spiral_inwards - Mine from edges toward center (default)",
+                "   > spiral_outwards - Mine from center toward edges",
+                "   > zigzag - Mine in rows like mowing a lawn",
+                "",
+                "Example: tunnel start mining zigzag",
                 "",
                 "The area selection mode shows a green outline of the area to be mined.",
                 "This allows you to visually confirm the selection before mining.",

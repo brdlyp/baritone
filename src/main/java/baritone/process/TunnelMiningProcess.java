@@ -24,6 +24,7 @@ import baritone.api.pathing.goals.GoalComposite;
 import baritone.api.pathing.goals.GoalNear;
 import baritone.api.process.IBaritoneProcess;
 import baritone.api.process.ITunnelMiningProcess;
+import baritone.api.process.MiningPattern;
 import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
 import baritone.api.utils.BetterBlockPos;
@@ -53,11 +54,13 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
     private int currentPositionIndex;
     private boolean active;
     private int layerHeight; // How many blocks high each layer is (2-3 for standing reach)
+    private MiningPattern currentPattern;
 
     public TunnelMiningProcess(Baritone baritone) {
         super(baritone);
         this.active = false;
         this.layerHeight = 3; // Mine 3 blocks high from each position
+        this.currentPattern = MiningPattern.SPIRAL_INWARDS; // Default pattern
     }
 
     @Override
@@ -67,6 +70,11 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
 
     @Override
     public void setArea(BlockPos pos1, BlockPos pos2) {
+        setArea(pos1, pos2, MiningPattern.SPIRAL_INWARDS);
+    }
+
+    @Override
+    public void setArea(BlockPos pos1, BlockPos pos2, MiningPattern pattern) {
         // Normalize to min/max corners
         this.corner1 = new BlockPos(
                 Math.min(pos1.getX(), pos2.getX()),
@@ -79,12 +87,35 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
                 Math.max(pos1.getZ(), pos2.getZ())
         );
 
-        // Generate the ordered list of mining positions
-        this.orderedMiningPositions = generateSpiralMiningOrder();
+        this.currentPattern = pattern != null ? pattern : MiningPattern.SPIRAL_INWARDS;
+
+        // Generate the ordered list of mining positions based on pattern
+        this.orderedMiningPositions = generateMiningOrder(this.currentPattern);
         this.currentPositionIndex = 0;
         this.active = true;
 
-        logDirect(String.format("Tunnel mining started: %d positions to process", orderedMiningPositions.size()));
+        logDirect(String.format("Tunnel mining started with %s pattern: %d positions to process", 
+                currentPattern.getDisplayName(), orderedMiningPositions.size()));
+    }
+
+    @Override
+    public MiningPattern getCurrentPattern() {
+        return active ? currentPattern : null;
+    }
+
+    /**
+     * Generate the mining order based on the selected pattern.
+     */
+    private List<BlockPos> generateMiningOrder(MiningPattern pattern) {
+        switch (pattern) {
+            case SPIRAL_OUTWARDS:
+                return generateSpiralOutwardsMiningOrder();
+            case ZIGZAG:
+                return generateZigzagMiningOrder();
+            case SPIRAL_INWARDS:
+            default:
+                return generateSpiralInwardsMiningOrder();
+        }
     }
 
     @Override
@@ -344,10 +375,11 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
     }
 
     /**
-     * Generate the ordered list of mining positions using spiral pattern and layer-based progression.
-     * Starts from the top and works down, with each layer using a spiral pattern.
+     * Generate the ordered list of mining positions using spiral inwards pattern.
+     * Starts from the outside edges and spirals toward the center.
+     * Works from top to bottom in layers.
      */
-    private List<BlockPos> generateSpiralMiningOrder() {
+    private List<BlockPos> generateSpiralInwardsMiningOrder() {
         List<BlockPos> positions = new ArrayList<>();
 
         int minX = corner1.getX();
@@ -527,6 +559,225 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
         return positions;
     }
 
+    /**
+     * Generate the ordered list of mining positions using spiral outwards pattern.
+     * Starts from the center and spirals outward toward the edges.
+     * Works from top to bottom in layers.
+     */
+    private List<BlockPos> generateSpiralOutwardsMiningOrder() {
+        List<BlockPos> positions = new ArrayList<>();
+
+        int minX = corner1.getX();
+        int maxX = corner2.getX();
+        int minY = corner1.getY();
+        int maxY = corner2.getY();
+        int minZ = corner1.getZ();
+        int maxZ = corner2.getZ();
+
+        // Work from top to bottom in layers
+        for (int layerTop = maxY; layerTop >= minY; layerTop -= layerHeight) {
+            int layerY = layerTop;
+
+            // Generate spiral outwards pattern for this layer
+            List<BlockPos> layerPositions = generateSpiralOutwardsForLayer(
+                    minX, maxX, minZ, maxZ, layerY
+            );
+            positions.addAll(layerPositions);
+        }
+
+        return positions;
+    }
+
+    /**
+     * Generate a spiral outwards pattern for a single layer, starting from the center.
+     */
+    private List<BlockPos> generateSpiralOutwardsForLayer(int minX, int maxX, int minZ, int maxZ, int y) {
+        List<BlockPos> positions = new ArrayList<>();
+
+        int width = maxX - minX + 1;
+        int length = maxZ - minZ + 1;
+
+        // For very small areas, just do a simple iteration
+        if (width * length <= 4) {
+            for (int x = minX; x <= maxX; x++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    positions.add(new BlockPos(x, y, z));
+                }
+            }
+            return positions;
+        }
+
+        // Calculate center position
+        int centerX = (minX + maxX) / 2;
+        int centerZ = (minZ + maxZ) / 2;
+
+        // Track visited positions
+        boolean[][] visited = new boolean[width][length];
+
+        // Start at center
+        int x = centerX;
+        int z = centerZ;
+
+        // Direction vectors: right, down, left, up
+        int[] dx = {1, 0, -1, 0};
+        int[] dz = {0, 1, 0, -1};
+        int dir = 0; // Start going right
+
+        int stepsInDirection = 1;
+        int stepsTaken = 0;
+        int directionChanges = 0;
+
+        int totalPositions = width * length;
+        int positionsAdded = 0;
+
+        while (positionsAdded < totalPositions) {
+            // Add current position if valid and not visited
+            if (x >= minX && x <= maxX && z >= minZ && z <= maxZ) {
+                int arrayX = x - minX;
+                int arrayZ = z - minZ;
+                if (!visited[arrayX][arrayZ]) {
+                    visited[arrayX][arrayZ] = true;
+                    positions.add(new BlockPos(x, y, z));
+                    positionsAdded++;
+                }
+            }
+
+            // Move to next position
+            x += dx[dir];
+            z += dz[dir];
+            stepsTaken++;
+
+            // Check if we need to turn
+            if (stepsTaken >= stepsInDirection) {
+                stepsTaken = 0;
+                dir = (dir + 1) % 4; // Turn right
+                directionChanges++;
+
+                // Increase steps every 2 turns
+                if (directionChanges % 2 == 0) {
+                    stepsInDirection++;
+                }
+            }
+
+            // Safety check to prevent infinite loop
+            if (positionsAdded == 0 && stepsTaken > totalPositions * 4) {
+                break;
+            }
+        }
+
+        return positions;
+    }
+
+    /**
+     * Generate the ordered list of mining positions using zigzag (lawn mower) pattern.
+     * Mines row by row, alternating direction each row.
+     * Works from top to bottom in layers.
+     */
+    private List<BlockPos> generateZigzagMiningOrder() {
+        List<BlockPos> positions = new ArrayList<>();
+
+        int minX = corner1.getX();
+        int maxX = corner2.getX();
+        int minY = corner1.getY();
+        int maxY = corner2.getY();
+        int minZ = corner1.getZ();
+        int maxZ = corner2.getZ();
+
+        // Determine starting corner based on player position
+        BlockPos playerPos = ctx.playerFeet();
+        boolean startFromMinX = Math.abs(playerPos.getX() - minX) <= Math.abs(playerPos.getX() - maxX);
+        boolean startFromMinZ = Math.abs(playerPos.getZ() - minZ) <= Math.abs(playerPos.getZ() - maxZ);
+
+        // Determine which axis to zigzag along (use shorter axis for rows = more efficient)
+        int widthX = maxX - minX + 1;
+        int widthZ = maxZ - minZ + 1;
+        boolean zigzagAlongX = widthX >= widthZ; // Zigzag along the longer axis
+
+        // Work from top to bottom in layers
+        for (int layerTop = maxY; layerTop >= minY; layerTop -= layerHeight) {
+            int layerY = layerTop;
+
+            // Generate zigzag pattern for this layer
+            List<BlockPos> layerPositions = generateZigzagForLayer(
+                    minX, maxX, minZ, maxZ, layerY,
+                    startFromMinX, startFromMinZ, zigzagAlongX
+            );
+            positions.addAll(layerPositions);
+        }
+
+        return positions;
+    }
+
+    /**
+     * Generate a zigzag pattern for a single layer.
+     *
+     * @param minX Minimum X coordinate
+     * @param maxX Maximum X coordinate
+     * @param minZ Minimum Z coordinate
+     * @param maxZ Maximum Z coordinate
+     * @param y Y coordinate for this layer
+     * @param startFromMinX Whether to start from minX side
+     * @param startFromMinZ Whether to start from minZ side
+     * @param zigzagAlongX Whether to zigzag along the X axis (true) or Z axis (false)
+     */
+    private List<BlockPos> generateZigzagForLayer(int minX, int maxX, int minZ, int maxZ, int y,
+                                                   boolean startFromMinX, boolean startFromMinZ,
+                                                   boolean zigzagAlongX) {
+        List<BlockPos> positions = new ArrayList<>();
+
+        if (zigzagAlongX) {
+            // Zigzag along X axis, rows are Z
+            // Determine row iteration direction
+            int zStart = startFromMinZ ? minZ : maxZ;
+            int zEnd = startFromMinZ ? maxZ : minZ;
+            int zStep = startFromMinZ ? 1 : -1;
+
+            boolean goingPositiveX = startFromMinX;
+            
+            for (int z = zStart; startFromMinZ ? (z <= zEnd) : (z >= zEnd); z += zStep) {
+                if (goingPositiveX) {
+                    // Left to right
+                    for (int x = minX; x <= maxX; x++) {
+                        positions.add(new BlockPos(x, y, z));
+                    }
+                } else {
+                    // Right to left
+                    for (int x = maxX; x >= minX; x--) {
+                        positions.add(new BlockPos(x, y, z));
+                    }
+                }
+                // Reverse direction for next row
+                goingPositiveX = !goingPositiveX;
+            }
+        } else {
+            // Zigzag along Z axis, rows are X
+            // Determine row iteration direction
+            int xStart = startFromMinX ? minX : maxX;
+            int xEnd = startFromMinX ? maxX : minX;
+            int xStep = startFromMinX ? 1 : -1;
+
+            boolean goingPositiveZ = startFromMinZ;
+            
+            for (int x = xStart; startFromMinX ? (x <= xEnd) : (x >= xEnd); x += xStep) {
+                if (goingPositiveZ) {
+                    // Front to back
+                    for (int z = minZ; z <= maxZ; z++) {
+                        positions.add(new BlockPos(x, y, z));
+                    }
+                } else {
+                    // Back to front
+                    for (int z = maxZ; z >= minZ; z--) {
+                        positions.add(new BlockPos(x, y, z));
+                    }
+                }
+                // Reverse direction for next row
+                goingPositiveZ = !goingPositiveZ;
+            }
+        }
+
+        return positions;
+    }
+
     @Override
     public void onLostControl() {
         cancel();
@@ -540,6 +791,7 @@ public final class TunnelMiningProcess extends BaritoneProcessHelper implements 
         int remaining = orderedMiningPositions.size() - currentPositionIndex;
         int total = orderedMiningPositions.size();
         int percent = (int) (((double) currentPositionIndex / total) * 100);
-        return String.format("Tunnel Mining %d%% (%d/%d positions)", percent, currentPositionIndex, total);
+        return String.format("Tunnel Mining [%s] %d%% (%d/%d positions)", 
+                currentPattern.getDisplayName(), percent, currentPositionIndex, total);
     }
 }
