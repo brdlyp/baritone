@@ -326,18 +326,20 @@ public class TunnelCommand extends Command {
     public Stream<String> tabComplete(String label, IArgConsumer args) {
         try {
             if (args.hasExactlyOne()) {
+                String partial = args.peekString().toLowerCase(Locale.US);
                 return Stream.of("set", "start", "clear", "status")
-                        .filter(s -> s.startsWith(args.peekString().toLowerCase(Locale.US)));
+                        .filter(s -> s.startsWith(partial));
             }
             if (args.hasExactly(2)) {
                 String firstArg = args.getString().toLowerCase(Locale.US);
+                String partial = args.peekString().toLowerCase(Locale.US);
                 if ("set".equals(firstArg)) {
                     return Stream.of("start", "end")
-                            .filter(s -> s.startsWith(args.peekString().toLowerCase(Locale.US)));
+                            .filter(s -> s.startsWith(partial));
                 }
                 if ("start".equals(firstArg)) {
                     return Stream.of("mining")
-                            .filter(s -> s.startsWith(args.peekString().toLowerCase(Locale.US)));
+                            .filter(s -> s.startsWith(partial));
                 }
             }
         } catch (Exception e) {
