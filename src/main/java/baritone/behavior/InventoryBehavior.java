@@ -69,9 +69,20 @@ public final class InventoryBehavior extends Behavior implements Helper {
         if (firstValidThrowaway() >= 9) { // aka there are none on the hotbar, but there are some in main inventory
             requestSwapWithHotBar(firstValidThrowaway(), 8);
         }
+        // Keep pickaxe on hotbar slot 0 (for stone, ores, etc.)
         int pick = bestToolAgainst(Blocks.STONE);
         if (pick >= 9) {
             requestSwapWithHotBar(pick, 0);
+        }
+        // Keep shovel on hotbar slot 1 (for dirt, gravel, sand, etc.)
+        int shovel = bestToolAgainst(Blocks.DIRT);
+        if (shovel >= 9 && shovel != pick) {
+            requestSwapWithHotBar(shovel, 1);
+        }
+        // Keep axe on hotbar slot 2 (for wood, logs, etc.)
+        int axe = bestToolAgainst(Blocks.OAK_LOG);
+        if (axe >= 9 && axe != pick && axe != shovel) {
+            requestSwapWithHotBar(axe, 2);
         }
         if (lastTickRequestedMove != null) {
             logDebug("Remembering to move " + lastTickRequestedMove[0] + " " + lastTickRequestedMove[1] + " from a previous tick");
@@ -90,15 +101,15 @@ public final class InventoryBehavior extends Behavior implements Helper {
     }
 
     public OptionalInt getTempHotbarSlot(Predicate<Integer> disallowedHotbar) {
-        // we're using 0 and 8 for pickaxe and throwaway
+        // we're using 0 for pickaxe, 1 for shovel, 2 for axe, and 8 for throwaway
         ArrayList<Integer> candidates = new ArrayList<>();
-        for (int i = 1; i < 8; i++) {
+        for (int i = 3; i < 8; i++) {
             if (ctx.player().getInventory().getNonEquipmentItems().get(i).isEmpty() && !disallowedHotbar.test(i)) {
                 candidates.add(i);
             }
         }
         if (candidates.isEmpty()) {
-            for (int i = 1; i < 8; i++) {
+            for (int i = 3; i < 8; i++) {
                 if (!disallowedHotbar.test(i)) {
                     candidates.add(i);
                 }
