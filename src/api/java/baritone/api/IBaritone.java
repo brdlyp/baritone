@@ -101,6 +101,12 @@ public interface IBaritone {
     IVillagerTradeProcess getVillagerTradeProcess();
 
     /**
+     * @return The {@link ITunnelMiningProcess} instance
+     * @see ITunnelMiningProcess
+     */
+    ITunnelMiningProcess getTunnelMiningProcess();
+
+    /**
      * @return The {@link IWorldProvider} instance
      * @see IWorldProvider
      */

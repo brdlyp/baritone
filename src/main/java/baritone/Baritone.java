@@ -35,6 +35,7 @@ import baritone.utils.BlockStateInterface;
 import baritone.utils.GuiClick;
 import baritone.utils.InputOverrideHandler;
 import baritone.utils.PathingControlManager;
+import baritone.utils.TunnelSelectionRenderer;
 import baritone.utils.player.BaritonePlayerContext;
 import net.minecraft.client.Minecraft;
 
@@ -81,10 +82,12 @@ public class Baritone implements IBaritone {
     private final InventoryPauserProcess inventoryPauserProcess;
     private final IElytraProcess elytraProcess;
     private final VillagerTradeProcess villagerTradeProcess;
+    private final TunnelMiningProcess tunnelMiningProcess;
 
     private final PathingControlManager pathingControlManager;
     private final SelectionManager selectionManager;
     private final CommandManager commandManager;
+    private final TunnelSelectionRenderer tunnelSelectionRenderer;
 
     private final IPlayerContext playerContext;
     private final WorldProvider worldProvider;
@@ -125,12 +128,14 @@ public class Baritone implements IBaritone {
             this.inventoryPauserProcess  = this.registerProcess(InventoryPauserProcess::new);
             this.elytraProcess           = this.registerProcess(ElytraProcess::create);
             this.villagerTradeProcess    = this.registerProcess(VillagerTradeProcess::new);
+            this.tunnelMiningProcess     = this.registerProcess(TunnelMiningProcess::new);
             this.registerProcess(BackfillProcess::new);
         }
 
         this.worldProvider = new WorldProvider(this);
         this.selectionManager = new SelectionManager(this);
         this.commandManager = new CommandManager(this);
+        this.tunnelSelectionRenderer = new TunnelSelectionRenderer(this);
     }
 
     public void registerBehavior(IBehavior behavior) {
@@ -245,6 +250,11 @@ public class Baritone implements IBaritone {
     @Override
     public VillagerTradeProcess getVillagerTradeProcess() {
         return this.villagerTradeProcess;
+    }
+
+    @Override
+    public TunnelMiningProcess getTunnelMiningProcess() {
+        return this.tunnelMiningProcess;
     }
 
     @Override

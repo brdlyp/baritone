@@ -1548,6 +1548,35 @@ public final class Settings {
      */
     public final Setting<Boolean> allowWalkOnMagmaBlocks = new Setting<>(false);
 
+    // ==================== Tunnel Mining Settings ====================
+
+    /**
+     * The start position (first corner) for the tunnel mining area.
+     * A Y value of Integer.MIN_VALUE indicates the position is not set.
+     */
+    public final Setting<Vec3i> tunnelStartPos = new Setting<>(new Vec3i(0, Integer.MIN_VALUE, 0));
+
+    /**
+     * The end position (second corner) for the tunnel mining area.
+     * A Y value of Integer.MIN_VALUE indicates the position is not set.
+     */
+    public final Setting<Vec3i> tunnelEndPos = new Setting<>(new Vec3i(0, Integer.MIN_VALUE, 0));
+
+    /**
+     * Whether to show the green outline for the tunnel mining area.
+     */
+    public final Setting<Boolean> tunnelShowOutline = new Setting<>(false);
+
+    /**
+     * The color of the tunnel mining selection outline.
+     */
+    public final Setting<Color> colorTunnelSelection = new Setting<>(Color.GREEN);
+
+    /**
+     * Line width of the tunnel selection outline when rendered, in pixels.
+     */
+    public final Setting<Float> tunnelSelectionLineWidth = new Setting<>(3F);
+
     // ==================== Villager Trade Cycling Settings ====================
 
     /**
