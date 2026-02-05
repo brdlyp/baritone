@@ -4,34 +4,89 @@
 
 ## Fork Additions and Stuff
 
-This fork adds **Villager Trade Automation** - a system to automatically cycle librarian villagers to find specific enchanted books (Mending, Sharpness V, Protection IV, etc.).
+This fork adds several enhancements to Baritone for Minecraft 1.21.8:
 
-### Features Added
+### 1. Villager Trade Automation
 
+A system to automatically cycle librarian villagers to find specific enchanted books (Mending, Sharpness V, Protection IV, etc.).
+
+**Features:**
 - **`#trade` command** - Full command interface for villager trade cycling
 - **Automatic trade cycling** - Place/break workstations to reset villager trades
 - **Enchantment search** - Search for specific enchantments by name and level
 - **Preset support** - Built-in presets like `sword_best`, `helmet_best`, `all_best`
 - **Human-like behavior mode** - Adds randomized delays to appear more natural
 - **Auto-lock option** - Automatically make a trade to lock the profession when found
-- **Item collection** - Handles dropped workstation items during cycling
 
-### Quick Start
-
+**Quick Start:**
 ```
 #trade setvil             - Select the villager you're looking at
-#trade setpos             - Select the workstation placement position you're looking at
-#trade cycle mending      - Cycle until Mending book is found (lectern auto-selected from hotbar)
-#trade cycle mending -human  - Cycle with human-like randomized delays
+#trade setpos             - Select the workstation placement position
+#trade cycle mending      - Cycle until Mending book is found
 #trade stop               - Stop cycling
-#trade status             - Show cycle statistics
 ```
 
 See [VillagerTradeAutomate.md](VillagerTradeAutomate.md) for full documentation.
 
 ---
 
+### 2. Enhanced Tunnel Mining
+
+An improved tunnel command with visual selection and human-like mining patterns.
+
+**Features:**
+- **Visual selection** - Look at blocks to define mining corners
+- **Green outline preview** - See exactly what will be mined before starting
+- **Spiral mining pattern** - Methodical top-to-bottom mining that looks natural
+- **Persistent positions** - Selections are saved across game sessions
+- **Progress indicator** - HUD shows mining progress percentage
+
+**Quick Start:**
+```
+#tunnel set start         - Look at a block, set first corner
+#tunnel set end           - Look at another block, set second corner
+#tunnel start mining      - Begin mining the selected area
+#tunnel clear             - Clear selection and stop mining
+#tunnel status            - Show current selection info
+```
+
+**Mining Pattern:**
+The improved tunnel command uses a spiral pattern starting from the corner nearest to you:
+- Mines from **top to bottom** in layers
+- Each layer uses a **spiral inward** pattern
+- Mines **3 blocks high** from each standing position (player reach)
+- Looks **human-like** from third-person view (no erratic movements)
+
+Original tunnel commands still work:
+```
+#tunnel                   - Simple 1x2 tunnel in facing direction
+#tunnel 4 3 50            - Tunnel 4 high, 3 wide, 50 deep
+```
+
+---
+
 ## Fork Changelog
+
+### v1.21.8-fork.2 (February 2026)
+
+**New Features:**
+- Added `TunnelMiningProcess` - Methodical spiral mining pattern for clearing areas
+- Added `TunnelSelectionRenderer` - Visual green outline for tunnel selection preview
+- Enhanced `#tunnel` command with visual area selection (`set start`, `set end`, `start mining`)
+
+**Enhancements:**
+- Spiral mining pattern starts from corner nearest to player
+- Top-to-bottom layer progression with 3-block reach height
+- Mining positions persist across game sessions
+- HUD progress indicator shows completion percentage
+- Original tunnel command syntax preserved for backwards compatibility
+
+**Technical:**
+- Added `ITunnelMiningProcess` API interface
+- Added tunnel-specific settings (`tunnelStartPos`, `tunnelEndPos`, `tunnelShowOutline`, `colorTunnelSelection`)
+- Integrated renderer with Baritone's event system
+
+---
 
 ### v1.21.8-fork.1 (January 2026)
 
